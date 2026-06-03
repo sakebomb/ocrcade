@@ -6,3 +6,6 @@ numpy>=1.26
 requests>=2.31
 PyYAML>=6.0
 Flask>=3.0
+Pillow>=10.0          # display rendering (framebuffer)
+beautifulsoup4>=4.12  # sync_teams.py (RootTheBox admin scraping)
+

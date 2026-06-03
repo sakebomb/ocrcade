@@ -13,9 +13,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install tooling
+        run: pip install ruff pytest
       - name: Ruff lint
         run: ruff check .
       - name: Byte-compile (catches syntax errors)
-        run: python -m compileall -q vision game display *.py
+        run: python -m compileall -q vision game display server.py
+      - name: Unit tests
+        run: python -m pytest tests/ -q
