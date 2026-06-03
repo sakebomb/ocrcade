@@ -11,6 +11,8 @@ dependencies = [
     "requests>=2.31",
     "PyYAML>=6.0",
     "Flask>=3.0",
+    "Pillow>=10.0",
+    "beautifulsoup4>=4.12",
 ]
 
 # hailo_platform (Hailo-10H runtime) and picamera2 are provided by the kepler
@@ -26,8 +28,11 @@ target-version = "py311"
 select = ["E", "F", "I", "W", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-# standalone dev scripts insert the repo root on sys.path before importing the package
+# standalone dev scripts + tests insert the repo root on sys.path before importing
 "tools/*" = ["E402"]
+"tests/*" = ["E402"]
+# dense direct-framebuffer rendering: long draw.text() calls read better unwrapped
+"display/display_manager.py" = ["E501"]
 
 [tool.black]
 line-length = 100

@@ -9,5 +9,11 @@ logs/
 ocrcade-logs/
 solved_log.json
 flags/*.txt
+puzzles/level*/flag*.txt
 teams.json
+flag_config.json
+konami_config.json
 .env
+# ...but DO commit the example/placeholder files
+!*.example.txt
+!*.example.json
