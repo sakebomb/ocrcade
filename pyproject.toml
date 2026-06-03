@@ -1,0 +1,37 @@
+[project]
+name = "ocrcade"
+version = "2.0.0"
+description = "Coding-arcade game: read code from a camera with a VLM, sandbox it, score teams."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = [
+    "opencv-python-headless>=4.9",
+    "numpy>=1.26",
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "Flask>=3.0",
+]
+
+# hailo_platform (Hailo-10H runtime) and picamera2 are provided by the kepler
+# system image, not pip — they are intentionally not listed as dependencies.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# vision/capture.py and backends/hailo_vlm.py import device-only modules lazily;
+# nothing here imports them at module load, so lint stays clean off-device.
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# standalone dev scripts insert the repo root on sys.path before importing the package
+"tools/*" = ["E402"]
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+line_length = 100

@@ -1,0 +1,36 @@
+# OCRcade v2 configuration. Single source of truth for endpoints + thresholds.
+vlm:
+  primary: ollama          # the code reader
+  fallback: hailo          # coarse: puzzle-number + camera-challenge routing only (NOT a code reader)
+  on_unreachable: degrade  # degrade = run camera challenges + routing; code puzzles need the GPU link
+
+  ollama:
+    url: "http://10.0.9.150:11434"   # Jupiter / 4090
+    model: "qwen2.5vl:7b"
+    num_ctx: 4096                     # MUST cap or 32K default overflows 24GB VRAM -> CPU fallback
+    keep_alive: "60s"                 # load-on-demand; unloads after idle (memory-pressure friendly)
+    timeout_s: 60
+
+  hailo:
+    hef: "/home/sakebomb/Qwen2-VL-2B-Instruct.hef"  # 336x336 input; coarse only
+    max_tokens: 64
+
+gating:
+  scan_fps: 4
+  blur_min: 60.0          # variance-of-Laplacian; below = too blurry to read, skip (tune on device)
+  stable_frames: 4        # consecutive low-diff frames before triggering a read
+  stable_diff_max: 8.0    # mean abs interframe diff (0-255) counted as "stable"
+  min_content: 0.012      # min fraction of dark (text) pixels so we don't read a blank screen
+  cooldown_s: 20          # after a submission, ignore frames this long
+
+camera:
+  main_size: [2028, 1520]
+  lores_size: [640, 480]
+  rotate: 0               # submit snaps were upright; set 90/180/270 if the mount changes
+
+exec:
+  url: "http://127.0.0.1:5000"   # the local Flask exec/display server
+
+server:
+  host: "0.0.0.0"
+  port: 5000

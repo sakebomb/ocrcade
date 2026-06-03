@@ -1,0 +1,8 @@
+# Vision pipeline (runs on kepler) + exec server.
+# Hailo (hailo_platform) and picamera2 are provided by the system image on kepler,
+# not pip-installed here.
+opencv-python-headless>=4.9
+numpy>=1.26
+requests>=2.31
+PyYAML>=6.0
+Flask>=3.0

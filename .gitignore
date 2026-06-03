@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.hef
+*.jpg
+*.log
+.venv/
+venv/
+logs/
+ocrcade-logs/
+solved_log.json
+flags/*.txt
+teams.json
+.env
