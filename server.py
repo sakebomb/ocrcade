@@ -48,9 +48,14 @@ _inflight_lock = threading.Lock()
 
 
 def _reserve(team: str, puzzle: int) -> bool:
+    # is_solved() reads teams.json — keep that file I/O out of the lock, which only
+    # needs to guard the in-memory in-flight set. _mark_solved (before _release) is
+    # the authoritative persistence, so a slightly stale read here is safe.
+    if is_solved(team, puzzle):
+        return False
     key = (team.strip().lower(), puzzle)
     with _inflight_lock:
-        if is_solved(team, puzzle) or key in _inflight:
+        if key in _inflight:
             return False
         _inflight.add(key)
         return True
