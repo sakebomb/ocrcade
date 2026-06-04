@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
 
 def load_config(path: str | Path | None = None) -> dict:
+    # Lazy import: keeps the package importable without PyYAML (e.g. lightweight
+    # CI importing pure-Python submodules like game.roster / vision.markers map).
+    import yaml
+
     if path is None:
         path = Path(__file__).resolve().parent.parent / "config.yaml"
     with open(path) as f:
