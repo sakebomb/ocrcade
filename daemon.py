@@ -23,7 +23,6 @@ import time
 import cv2
 import requests
 
-from game.roster import resolve_team
 from vision import load_config
 from vision.capture import Camera
 from vision.gating import FrameGate
@@ -130,7 +129,7 @@ class Daemon:
             dict_name=cfg.get("markers", {}).get("dict", "DICT_4X4_50"))
         ui = ServerUI(exec_url)
         rb = cfg.get("readback", {})
-        confirm = AutoConfirm(hold_s=float(rb.get("hold_s", 4.0)))
+        confirm = self._make_confirm(cfg.get("button", {}), rb)
 
         self.cam = self._new_camera()
         self.pipeline = Pipeline(
@@ -141,6 +140,15 @@ class Daemon:
             select_timeout_s=float(cfg.get("select", {}).get("timeout_s", 60.0)),
             readback_timeout_s=float(rb.get("timeout_s", 30.0)),
             cooldown_s=float(g.get("cooldown_s", 20.0)))
+
+    @staticmethod
+    def _make_confirm(btn: dict, rb: dict):
+        """gpio → physical button (lgpio); otherwise auto-submit after a hold."""
+        if btn.get("mode") == "gpio":
+            from hw.button import ButtonConfirm
+            return ButtonConfirm(pin=int(btn.get("gpio_pin", 17)),
+                                 chip=int(btn.get("chip", 0)))
+        return AutoConfirm(hold_s=float(rb.get("hold_s", 4.0)))
 
     def _new_camera(self) -> Camera:
         return Camera(main_size=self.cam_cfg["main_size"],
@@ -159,33 +167,14 @@ class Daemon:
             time.sleep(1.0 / self.scan_fps)
 
     # --- camera challenges (puzzles 5/6) -----------------------------------
-    # NOTE: in the ArUco model the challenge card carries no team. We capture the
-    # team from a `# team:` frame first (OPEN UX question — flagged to user).
-    def _capture_team(self, timeout_s: float = 15.0) -> str | None:
-        g = self.cfg["gating"]
-        gate = FrameGate(blur_min=g["blur_min"], stable_frames=g["stable_frames"],
-                         stable_diff_max=g["stable_diff_max"], min_content=g["min_content"],
-                         max_content=g.get("max_content", 0.97))
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if gate.update(self.cam.lores()):
-                r = self.client.read_code(self.cam.main())
-                if r.readable:
-                    team = resolve_team(r.code, self.roster, self.roster_cutoff)
-                    if team:
-                        return team
-                gate.reset()
-            time.sleep(1.0 / self.scan_fps)
-        return None
+    # Anonymous fun rounds (user decision 2026-06-04): no team identification.
+    _ANON = "ANONYMOUS"
 
     def _run_challenge(self, puzzle: int, lang: str) -> None:
-        _post(self.feedback_url, {"error": "", "ocr_lines": [
-            f"Puzzle {puzzle} challenge", "Show your team line, then play"]})
-        team = self._capture_team() or "UNKNOWN"
         if puzzle == 5:
-            self._run_konami(team)
+            self._run_konami(self._ANON)
         elif puzzle == 6:
-            self._run_fruit_ninja(team)
+            self._run_fruit_ninja(self._ANON)
 
     def _run_konami(self, team: str) -> None:
         from challenges.konami_detector import KonamiDetector
