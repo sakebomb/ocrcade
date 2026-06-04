@@ -1,0 +1,17 @@
+[Unit]
+Description=OCRcade Execution/Display Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sakebomb
+WorkingDirectory=/home/sakebomb/ocrcade
+# RTB credentials (OCRCADE_RTB_*) — never commit the real file
+EnvironmentFile=-/home/sakebomb/ocrcade/.env
+ExecStart=/usr/bin/python3 /home/sakebomb/ocrcade/server.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

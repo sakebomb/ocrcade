@@ -21,6 +21,8 @@ dependencies = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# vendored third-party (Hailo example apps) — not ours to lint
+extend-exclude = ["challenges/hailo_apps"]
 # vision/capture.py and backends/hailo_vlm.py import device-only modules lazily;
 # nothing here imports them at module load, so lint stays clean off-device.
 
@@ -33,6 +35,9 @@ select = ["E", "F", "I", "W", "UP", "B"]
 "tests/*" = ["E402"]
 # dense direct-framebuffer rendering: long draw.text() calls read better unwrapped
 "display/display_manager.py" = ["E501"]
+# camera/Hailo/pygame mini-games: GStreamer require_version-before-import idiom (E402),
+# dense game code; device-only, can't run off-Pi
+"challenges/*.py" = ["E402", "E501", "E702"]
 
 [tool.black]
 line-length = 100
