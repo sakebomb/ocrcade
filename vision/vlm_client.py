@@ -21,6 +21,7 @@ class VLMBackend(Protocol):
     name: str
     def available(self) -> bool: ...
     def read_card(self, image_bgr: np.ndarray) -> CardReading: ...
+    def read_code(self, image_bgr: np.ndarray) -> CardReading: ...
 
 
 class VLMClient:
@@ -45,6 +46,17 @@ class VLMClient:
             return r
         return CardReading.unreadable(
             "no VLM backend reachable — connect to the GPU to read code", "none")
+
+    def read_code(self, image_bgr: np.ndarray) -> CardReading:
+        """Transcribe the code body. GPU-only: the Hailo fallback can't read code
+        (Phase 0), so when the primary is down we abstain rather than hallucinate."""
+        if not self.primary.available():
+            return CardReading.unreadable(
+                "code reader (GPU) unreachable — connect to the GPU to read code", "none")
+        r = self.primary.read_code(image_bgr)
+        log.info(f"[{r.backend}] read_code readable={r.readable} "
+                 f"({len(r.code or '')} chars, {r.latency_s:.1f}s)")
+        return r
 
     @property
     def degraded(self) -> bool:

@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 import requests
 
-from ..prompts import READ_CARD_PROMPT
+from ..prompts import READ_CARD_PROMPT, READ_CODE_PROMPT
 from ..schema import SUPPORTED_LANGS, CardReading
 
 log = logging.getLogger("ocrcade.vlm.ollama")
@@ -42,19 +42,19 @@ class OllamaVLMBackend:
         except requests.RequestException:
             return False
 
-    def read_card(self, image_bgr: np.ndarray) -> CardReading:
+    def _generate(self, prompt: str, image_bgr: np.ndarray) -> tuple[str | None, str, float]:
+        """Run one VLM generate call. Returns (response_or_None, error, latency)."""
         ok, jpeg = cv2.imencode(".jpg", image_bgr, [cv2.IMWRITE_JPEG_QUALITY, 92])
         if not ok:
-            return CardReading.unreadable("jpeg encode failed", self.name)
+            return None, "jpeg encode failed", 0.0
         b64 = base64.b64encode(jpeg.tobytes()).decode()
-
         t0 = time.time()
         try:
             r = requests.post(
                 f"{self.url}/api/generate",
                 json={
                     "model": self.model,
-                    "prompt": READ_CARD_PROMPT,
+                    "prompt": prompt,
                     "images": [b64],
                     "stream": False,
                     "format": "json",
@@ -65,10 +65,28 @@ class OllamaVLMBackend:
             )
             r.raise_for_status()
         except requests.RequestException as e:
-            return CardReading.unreadable(f"ollama unreachable: {e}", self.name,
-                                          time.time() - t0)
-        dt = time.time() - t0
-        return self._parse(r.json().get("response", ""), dt)
+            return None, f"ollama unreachable: {e}", time.time() - t0
+        return r.json().get("response", ""), "", time.time() - t0
+
+    def read_card(self, image_bgr: np.ndarray) -> CardReading:
+        resp, err, dt = self._generate(READ_CARD_PROMPT, image_bgr)
+        if resp is None:
+            return CardReading.unreadable(err, self.name, dt)
+        return self._parse(resp, dt)
+
+    def read_code(self, image_bgr: np.ndarray) -> CardReading:
+        """Transcribe ONLY the code body (ArUco model — identity comes from the
+        marker, team from a `# team:` line in the returned code)."""
+        resp, err, dt = self._generate(READ_CODE_PROMPT, image_bgr)
+        if resp is None:
+            return CardReading.unreadable(err, self.name, dt)
+        try:
+            d = json.loads(resp)
+        except json.JSONDecodeError:
+            return CardReading.unreadable(f"non-JSON: {resp[:120]}", self.name, dt)
+        if not d.get("readable", False):
+            return CardReading.unreadable(d.get("reason", "model abstained"), self.name, dt)
+        return CardReading(readable=True, code=d.get("code"), backend=self.name, latency_s=dt)
 
     def _parse(self, resp: str, dt: float) -> CardReading:
         try:
