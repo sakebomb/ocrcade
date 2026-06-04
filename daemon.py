@@ -71,6 +71,7 @@ class Daemon:
         self.gate = FrameGate(
             blur_min=g["blur_min"], stable_frames=g["stable_frames"],
             stable_diff_max=g["stable_diff_max"], min_content=g["min_content"],
+            max_content=g.get("max_content", 0.97),
         )
         self.cam = self._new_camera()
 

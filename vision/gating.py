@@ -21,7 +21,7 @@ log = logging.getLogger("ocrcade.gate")
 class FrameGate:
     def __init__(self, blur_min: float = 60.0, stable_frames: int = 4,
                  stable_diff_max: float = 8.0, min_content: float = 0.012,
-                 max_content: float = 0.6):
+                 max_content: float = 0.97):
         self.blur_min = blur_min
         self.stable_frames = stable_frames
         self.stable_diff_max = stable_diff_max
@@ -43,8 +43,13 @@ class FrameGate:
 
     @staticmethod
     def content_fraction(gray: np.ndarray) -> float:
-        """Fraction of dark (ink/text) pixels via Otsu — distinguishes a card with
-        text from a blank bright screen or a dark empty scene."""
+        """Otsu-thresholded dark-pixel fraction. NOTE: the real cards are
+        light text on a DARK screen photographed in a dark room, so this counts
+        mostly background and runs HIGH (~0.13-0.94 on real cards, ~0.75 on an
+        empty dark scene). It therefore can't tell a card from no-card — `blur`
+        is the real card detector (empty ~13 vs cards ~380). This stays only as
+        a loose sanity bracket [min_content, max_content] to drop degenerate
+        uniform frames (a fully blank bright screen -> ~0)."""
         _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
         return float(np.count_nonzero(th)) / th.size
 
