@@ -7,6 +7,7 @@ does no card reading; that's the vision daemon's job.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -62,7 +63,8 @@ def require_operator(view):
     No-op when the token is unset (keeps dev/un-provisioned deploys working)."""
     @wraps(view)
     def wrapper(*args, **kwargs):
-        if OPERATOR_TOKEN and request.headers.get("X-Operator-Token") != OPERATOR_TOKEN:
+        provided = request.headers.get("X-Operator-Token", "")
+        if OPERATOR_TOKEN and not hmac.compare_digest(provided, OPERATOR_TOKEN):
             return jsonify({"error": "forbidden"}), 403
         return view(*args, **kwargs)
     return wrapper

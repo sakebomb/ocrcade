@@ -41,7 +41,10 @@ _OP_HEADERS = {"X-Operator-Token": _OP_TOKEN} if _OP_TOKEN else None
 
 def _post(url: str, payload: dict, timeout: float = 5.0) -> None:
     try:
-        requests.post(url, json=payload, timeout=timeout, headers=_OP_HEADERS)
+        r = requests.post(url, json=payload, timeout=timeout, headers=_OP_HEADERS)
+        if r.status_code >= 400:
+            hint = " (operator token mismatch?)" if r.status_code == 403 else ""
+            log.warning(f"POST {url} -> {r.status_code}{hint}")
     except requests.RequestException as e:
         log.debug(f"POST {url} failed: {e}")
 
