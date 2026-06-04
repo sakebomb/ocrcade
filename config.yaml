@@ -17,10 +17,14 @@ vlm:
 
 gating:
   scan_fps: 4
-  blur_min: 60.0          # variance-of-Laplacian; below = too blurry to read, skip (tune on device)
-  stable_frames: 4        # consecutive low-diff frames before triggering a read
-  stable_diff_max: 8.0    # mean abs interframe diff (0-255) counted as "stable"
-  min_content: 0.012      # min fraction of dark (text) pixels so we don't read a blank screen
+  blur_min: 60.0          # variance-of-Laplacian; below = too blurry to read (empty scene ~13, real cards ~380; verified on device)
+  stable_frames: 4        # consecutive low-diff frames before triggering a read (~1s at scan_fps)
+  stable_diff_max: 8.0    # mean abs interframe diff (0-255) counted as "stable" (static scene ~0.9, verified)
+  # Content fraction is a LOOSE sanity bracket, NOT the card detector. The cards are
+  # light text on a DARK screen, so Otsu dark-fraction runs HIGH and overlaps an empty
+  # dark scene (~0.75) -- blur does the real gating. Measured on 323 real cards: 0.13-0.94.
+  min_content: 0.012      # floor: drops a fully blank bright screen (~0 dark pixels)
+  max_content: 0.97       # ceiling: only drops degenerate near-solid frames (was 0.6 -> rejected 75% of real cards)
   cooldown_s: 20          # after a submission, ignore frames this long
 
 camera:
