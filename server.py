@@ -7,11 +7,14 @@ does no card reading; that's the vision daemon's job.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import os
 import sys
 import threading
 import time
+from functools import wraps
 from pathlib import Path
 
 from flask import Flask, jsonify, request
@@ -38,6 +41,11 @@ MAX_CODE_LEN = 65536               # reject oversized payloads
 
 _solved_log_lock = threading.Lock()
 
+# Shared secret for the internal display/control endpoints (daemon + mini-games are
+# the legitimate callers). UNSET → auth disabled (logged), so existing deploys keep
+# working; set OCRCADE_OPERATOR_TOKEN in the env on both server and daemon to enforce.
+OPERATOR_TOKEN = os.environ.get("OCRCADE_OPERATOR_TOKEN", "")
+
 log = logging.getLogger("ocrcade.server")
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -45,6 +53,21 @@ logging.basicConfig(level=logging.INFO,
 
 app = Flask(__name__)
 display = Display()
+
+if not OPERATOR_TOKEN:
+    log.warning("OCRCADE_OPERATOR_TOKEN not set — display/control endpoints are UNAUTHENTICATED")
+
+
+def require_operator(view):
+    """Gate internal display/control endpoints behind the shared operator token.
+    No-op when the token is unset (keeps dev/un-provisioned deploys working)."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        provided = request.headers.get("X-Operator-Token", "")
+        if OPERATOR_TOKEN and not hmac.compare_digest(provided, OPERATOR_TOKEN):
+            return jsonify({"error": "forbidden"}), 403
+        return view(*args, **kwargs)
+    return wrapper
 
 
 def _append_solved_log(team: str, puzzle: int) -> None:
@@ -92,6 +115,7 @@ def submit():
 
 
 @app.route("/reset", methods=["POST"])
+@require_operator
 def reset():
     _init_level4_maze()
     display.attract()
@@ -99,6 +123,7 @@ def reset():
 
 
 @app.route("/preview", methods=["POST"])
+@require_operator
 def preview():
     d = request.get_json(force=True)
     display.preview(d.get("ocr_lines", []), float(d.get("stability", 0.0)),
@@ -107,6 +132,7 @@ def preview():
 
 
 @app.route("/feedback", methods=["POST"])
+@require_operator
 def feedback():
     d = request.get_json(force=True)
     display.parse_error(d.get("error", "OCR ERROR"), d.get("ocr_lines", []))
@@ -114,6 +140,7 @@ def feedback():
 
 
 @app.route("/konami_progress", methods=["POST"])
+@require_operator
 def konami_progress():
     d = request.get_json(force=True)
     display.konami_challenge(d.get("team", "?"), int(d.get("step", 0)),
@@ -124,24 +151,28 @@ def konami_progress():
 
 
 @app.route("/camera_feed", methods=["POST"])
+@require_operator
 def camera_feed():
     display.camera_feed(request.get_json(force=True).get("thumb", ""))
     return jsonify({"status": "ok"}), 200
 
 
 @app.route("/fruitage_pause", methods=["POST"])
+@require_operator
 def fruitage_pause():
     display.fruitage_start()
     return jsonify({"status": "ok"}), 200
 
 
 @app.route("/fruitage_resume", methods=["POST"])
+@require_operator
 def fruitage_resume():
     display.fruitage_end()
     return jsonify({"status": "ok"}), 200
 
 
 @app.route("/maze_preview", methods=["POST"])
+@require_operator
 def maze_preview():
     maze_path = PUZZLES_DIR / "level3" / "maze_fixed.txt"
     if not maze_path.exists():
