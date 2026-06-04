@@ -18,6 +18,8 @@ jobs:
       - name: Ruff lint
         run: ruff check .
       - name: Byte-compile (catches syntax errors)
-        run: python -m compileall -q vision game display server.py
+        run: |
+          python -m compileall -q vision game display tests server.py daemon.py
+          python -m py_compile challenges/konami_detector.py challenges/fruit_ninja_runner.py
       - name: Unit tests
         run: python -m pytest tests/ -q

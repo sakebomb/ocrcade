@@ -1,0 +1,16 @@
+[Unit]
+Description=OCRcade Vision Daemon (camera + VLM)
+After=network-online.target ocrcade-exec.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sakebomb
+WorkingDirectory=/home/sakebomb/ocrcade
+EnvironmentFile=-/home/sakebomb/ocrcade/.env
+ExecStart=/usr/bin/python3 /home/sakebomb/ocrcade/daemon.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

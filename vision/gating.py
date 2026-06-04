@@ -30,6 +30,7 @@ class FrameGate:
         self._prev: np.ndarray | None = None
         self._stable = 0
         self._armed = True
+        self.last: dict = {"blur": 0.0, "diff": 0.0, "content": 0.0, "progress": 0.0}
 
     @staticmethod
     def _gray(frame_bgr: np.ndarray) -> np.ndarray:
@@ -66,6 +67,10 @@ class FrameGate:
             self._stable += 1
         else:
             self._stable = 0
+
+        self.last = {"blur": blur, "diff": diff, "content": content,
+                     "progress": min(1.0, self._stable / self.stable_frames),
+                     "has_text": has_text}
 
         if self._armed and self._stable >= self.stable_frames:
             self._armed = False
