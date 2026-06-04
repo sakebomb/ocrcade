@@ -41,6 +41,25 @@ MAX_CODE_LEN = 65536               # reject oversized payloads
 
 _solved_log_lock = threading.Lock()
 
+# Guards against double-submitting the same (team, puzzle): a submission in flight
+# (or already solved) is reserved so a concurrent duplicate is rejected up front.
+_inflight: set[tuple[str, int]] = set()
+_inflight_lock = threading.Lock()
+
+
+def _reserve(team: str, puzzle: int) -> bool:
+    key = (team.strip().lower(), puzzle)
+    with _inflight_lock:
+        if is_solved(team, puzzle) or key in _inflight:
+            return False
+        _inflight.add(key)
+        return True
+
+
+def _release(team: str, puzzle: int) -> None:
+    with _inflight_lock:
+        _inflight.discard((team.strip().lower(), puzzle))
+
 # Shared secret for the internal display/control endpoints (daemon + mini-games are
 # the legitimate callers). UNSET → auth disabled (logged), so existing deploys keep
 # working; set OCRCADE_OPERATOR_TOKEN in the env on both server and daemon to enforce.
@@ -220,41 +239,47 @@ def _run_submission(puzzle: int, team: str, lang: str, code: str) -> None:
         _show_maze_preview(puzzle, team)
         return
 
-    if puzzle != 0 and is_solved(team, puzzle):
-        log.info(f"Team '{team}' already solved puzzle {puzzle} – rejecting")
+    # Atomically claim this (team, puzzle) so two near-simultaneous submissions
+    # can't both pass the already-solved check and double-submit. Puzzle 0 (test)
+    # has no scoring, so it isn't reserved.
+    if puzzle != 0 and not _reserve(team, puzzle):
+        log.info(f"Team '{team}' already solved / in-flight puzzle {puzzle} – rejecting")
         display.failure(team, "ALREADY SOLVED – Your team already earned points for this puzzle")
         return
+    try:
+        # Camera-challenge puzzles (5/6): token validated directly, no sandbox.
+        if puzzle in (5, 6):
+            success, message = validate(puzzle, code)
+            if success:
+                ok, rtb_msg = rtb_submit(team, puzzle, message)
+                log.info(f"Puzzle {puzzle} RTB submit: {ok} – {rtb_msg}")
+                _append_solved_log(team, puzzle)
+                display.success(team, puzzle)
+            else:
+                display.failure(team, message)
+            return
 
-    # Camera-challenge puzzles (5/6): token validated directly, no sandbox.
-    if puzzle in (5, 6):
-        success, message = validate(puzzle, code)
+        display.received(team, puzzle)
+        result = sandbox_run(puzzle, lang, code)
+        if result["timed_out"]:
+            display.failure(team, "TIME LIMIT EXCEEDED – Your code took too long")
+            return
+
+        display.executing(result["stdout"], result["stderr"])
+        success, message = validate(puzzle, result["stdout"])
         if success:
-            ok, rtb_msg = rtb_submit(team, puzzle, message)
-            log.info(f"Puzzle {puzzle} RTB submit: {ok} – {rtb_msg}")
-            _append_solved_log(team, puzzle)
+            if puzzle == 0:
+                log.info(f"Test puzzle passed for team '{team}' – no points awarded")
+            else:
+                ok, rtb_msg = rtb_submit(team, puzzle, message)
+                log.info(f"RTB submit result: {ok} – {rtb_msg}")
+                _append_solved_log(team, puzzle)
             display.success(team, puzzle)
         else:
             display.failure(team, message)
-        return
-
-    display.received(team, puzzle)
-    result = sandbox_run(puzzle, lang, code)
-    if result["timed_out"]:
-        display.failure(team, "TIME LIMIT EXCEEDED – Your code took too long")
-        return
-
-    display.executing(result["stdout"], result["stderr"])
-    success, message = validate(puzzle, result["stdout"])
-    if success:
-        if puzzle == 0:
-            log.info(f"Test puzzle passed for team '{team}' – no points awarded")
-        else:
-            ok, rtb_msg = rtb_submit(team, puzzle, message)
-            log.info(f"RTB submit result: {ok} – {rtb_msg}")
-            _append_solved_log(team, puzzle)
-        display.success(team, puzzle)
-    else:
-        display.failure(team, message)
+    finally:
+        if puzzle != 0:
+            _release(team, puzzle)
 
 
 def main() -> None:

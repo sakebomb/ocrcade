@@ -26,6 +26,9 @@ from bs4 import BeautifulSoup
 RTB_HOST     = os.environ.get('OCRCADE_RTB_HOST', 'http://127.0.0.1:8888')
 RTB_HANDLE   = os.environ.get('OCRCADE_RTB_ADMIN_USER', 'admin')
 RTB_PASS     = os.environ.get('OCRCADE_RTB_ADMIN_PASSWORD', '')
+# TLS: CA bundle if provided, else unverified (RTB self-signed). Matches rtb_submitter.
+_RTB_CA      = os.environ.get('OCRCADE_RTB_CA_BUNDLE', '')
+RTB_VERIFY   = _RTB_CA if _RTB_CA else False
 TEAMS_FILE   = Path(__file__).resolve().parent.parent / 'teams.json'
 
 log = logging.getLogger('ocrcade.sync')
@@ -54,6 +57,7 @@ def admin_login() -> requests.Session:
         log.error('OCRCADE_RTB_ADMIN_PASSWORD is not set — export it before running.')
         sys.exit(1)
     session = requests.Session()
+    session.verify = RTB_VERIFY
     session.get(f'{RTB_HOST}/login', timeout=10)   # grab _xsrf cookie
     resp = _post(session, f'{RTB_HOST}/login', {
         'account':  RTB_HANDLE,
@@ -124,6 +128,7 @@ def register_bot(team_code: str, handle: str, password: str) -> bool:
     Returns True on success.
     """
     fresh = requests.Session()
+    fresh.verify = RTB_VERIFY
     fresh.get(f'{RTB_HOST}/registration', timeout=10)
 
     resp = _post(fresh, f'{RTB_HOST}/registration', {
@@ -138,6 +143,7 @@ def register_bot(team_code: str, handle: str, password: str) -> bool:
     # RTB returns 200+form regardless of success/failure.
     # Verify by attempting login with the new credentials.
     verify = requests.Session()
+    verify.verify = RTB_VERIFY
     verify.get(f'{RTB_HOST}/login', timeout=10)
     vxsrf = verify.cookies.get('_xsrf', '')
     vresp = verify.post(f'{RTB_HOST}/login', data={

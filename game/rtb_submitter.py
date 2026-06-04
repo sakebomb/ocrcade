@@ -23,6 +23,12 @@ log = logging.getLogger('ocrcade.rtb')
 # RTB target comes from the environment — never hardcode host/box identifiers.
 RTB_HOST        = os.environ.get('OCRCADE_RTB_HOST', 'https://127.0.0.1:8888')
 ORCADE_BOX_UUID = os.environ.get('OCRCADE_RTB_BOX_UUID', '')
+# TLS verification: point OCRCADE_RTB_CA_BUNDLE at the RTB CA cert to verify properly.
+# Unset → no verification (RTB ships a self-signed cert), with a one-time warning.
+_RTB_CA   = os.environ.get('OCRCADE_RTB_CA_BUNDLE', '')
+RTB_VERIFY = _RTB_CA if _RTB_CA else False
+if not RTB_VERIFY:
+    log.warning('RTB TLS verification disabled — set OCRCADE_RTB_CA_BUNDLE to enable')
 _ROOT           = Path(__file__).resolve().parent.parent
 TEAMS_FILE      = _ROOT / 'teams.json'
 FLAGS_DIR      = _ROOT / 'flags'
@@ -67,7 +73,7 @@ def _read_flag_token(puzzle: int) -> str:
 
 def _login(handle: str, password: str) -> requests.Session | None:
     session = requests.Session()
-    session.verify = False   # RTB uses self-signed cert
+    session.verify = RTB_VERIFY   # CA bundle if provided, else unverified (self-signed)
     session.get(f'{RTB_HOST}/login', timeout=10)   # grab _xsrf cookie
     resp = _post(session, f'{RTB_HOST}/login', {
         'account':  handle,
