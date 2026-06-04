@@ -55,3 +55,9 @@ def test_close_names_still_distinguished():
 def test_resolve_team_end_to_end():
     code = "# team: Megadd0mer\nwith open('data.txt') as f:\n    print(sum(int(x) for x in f))"
     assert resolve_team(code, ROSTER) == "Megad00mer"
+
+
+def test_resolve_team_no_roster_is_verbatim():
+    # unconfigured roster → feature off → accept the read name as-is
+    assert resolve_team("# team: Whoever\nprint(1)", []) == "Whoever"
+    assert resolve_team("print(1)", []) is None        # still need a team line

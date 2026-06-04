@@ -50,5 +50,13 @@ def match_team(name: str | None, roster: list[str], cutoff: float = 0.6) -> str 
 
 
 def resolve_team(code: str | None, roster: list[str], cutoff: float = 0.6) -> str | None:
-    """Convenience: extract the team line from code and match it to the roster."""
-    return match_team(extract_team_line(code), roster, cutoff=cutoff)
+    """Extract the team line from code and resolve it to a team name.
+
+    With a roster configured, fuzzy-match to it (recovers OCR slips, rejects
+    unregistered teams). With NO roster configured (empty), the feature is treated
+    as off — accept the read name verbatim so the game still works out-of-the-box.
+    """
+    name = extract_team_line(code)
+    if not roster:
+        return name
+    return match_team(name, roster, cutoff=cutoff)

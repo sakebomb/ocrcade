@@ -1,0 +1,285 @@
+# OCRcade — System & Operator Guide
+
+How the whole thing works, how to set it up, how to run an event, and how to fix
+it when something's off. For the player-facing version see
+[`PLAYER_GUIDE.md`](PLAYER_GUIDE.md).
+
+---
+
+## 1. What OCRcade is
+
+A **coding arcade game**. A team solves a small programming puzzle, shows their
+**code to a camera**, and the machine reads it, runs it in a sandbox, checks the
+output, and scores them. Two of the six puzzles are camera mini-games (Konami
+code, Fruit Ninja) with no code at all.
+
+The whole thing runs on a single Raspberry Pi 5 (**kepler**) with an AI camera. A
+GPU elsewhere on the network does the hard part — reading code from a photo.
+
+---
+
+## 2. How it works, end to end
+
+```
+  Player                     kepler (Pi 5)                         4090 GPU
+  ──────                     ─────────────                         ────────
+  show PUZZLE·LANG  ─▶  camera ─▶ ArUco marker decode ─▶ SELECT(puzzle, lang)
+   card (ArUco)
+  show CODE         ─▶  camera ─▶ gate (sharp+steady) ─▶ frame ─▶ Qwen2.5-VL ─▶ code text
+                                      │                                          │
+                                  team line  ◀───────────────────────────────────┘
+                                      │   "# team: NAME"  ─▶ roster fuzzy-match
+                                      ▼
+                                  READ-BACK on screen  ─▶  player presses GO (button)
+                                      │
+                                      ▼
+                                  /submit ─▶ sandbox run ─▶ validate output ─▶ score
+```
+
+The design splits the job so each part does what it's good at:
+
+| Need | Handled by | Why |
+|------|-----------|-----|
+| Which puzzle / language? | **ArUco marker** on a printed card | exact, organizer-controlled, robust at any angle/blur |
+| Which team? | **`# team:` line** in the code, fuzzy-matched to the **roster** | a one-character misread still resolves to the right registered team |
+| Read the code | **Qwen2.5-VL** (GPU, via Ollama) | far better than OCR at code; the one hard job |
+| Catch a misread | **read-back + button** | the player confirms what was read before it's scored |
+| Don't waste GPU calls / avoid hallucination | **the gate** (blur + stability) | only sharp, steady frames are sent |
+
+Why this shape: an earlier version had the camera read *everything* (puzzle, team,
+and code) off a text header. Team names and stacked symbols got misread, and the
+model would even invent code for a blank frame. Moving identity to a marker + a
+registered roster, and adding a human confirm, removed those failure modes. (A/B
+testing showed prompt-tuning alone could **not** fix the misreads — hence the
+read-back.)
+
+---
+
+## 3. The games (puzzles)
+
+| # | Type | What the player does |
+|---|------|----------------------|
+| 1 | Code | Sum the numbers, one per line, in `data.txt`. Beginner. |
+| 2 | Code | Same, as a one-liner. |
+| 3 | Code | Print the moves (`U/D/L/R`) that walk a maze. |
+| 4 | Code | Harder maze. |
+| 5 | Camera | **Konami code** — perform ↑↑↓↓←→←→BA with on-camera gestures. No code. |
+| 6 | Camera | **Fruit Ninja** — slice fruit with hand motion. No code. |
+
+Each code puzzle has, on kepler under the run directory: `puzzles/levelN/` with the
+input data, the expected output, and the flag awarded on success. Code runs inside
+a locked-down sandbox (`bwrap`, no network, resource limits) so untrusted player
+code can't harm the Pi.
+
+Puzzles 5 & 6 are **anonymous fun rounds** — they're not attributed to a team.
+
+---
+
+## 4. Hardware setup
+
+- **kepler** — Raspberry Pi 5 (8 GB). Runs everything except the code-reading model.
+- **Camera** — IMX500 AI camera on kepler. Players show code/cards to it. Mount it
+  so it sees a well-lit area where a laptop screen or paper can be held square-on.
+- **Display** — kepler's framebuffer (`/dev/fb0`) on an attached monitor shows the
+  prompts, alignment thumbnail, read-back, and results.
+- **GPU** — a machine on the network running **Ollama** with `qwen2.5vl:7b`
+  (currently the 4090 at `10.0.9.150:11434`). kepler POSTs frames to it.
+- **Button** (optional but recommended) — a momentary push-button for "GO / confirm".
+  See §6.
+
+### Network
+kepler must reach the Ollama GPU over the LAN. Code puzzles (1–4) need that link;
+if it's down the daemon runs in **degraded** mode (camera challenges + selection
+still work, code reads abstain with an honest message).
+
+---
+
+## 5. Software setup & deploy
+
+The code lives in this repo and is deployed to **`kepler:~/ocrcade`** (the running
+copy is a plain file tree, not a git checkout). Services are systemd units:
+
+- **`ocrcade-exec.service`** — the Flask exec/display server (`server.py`, port 5000,
+  loopback). Runs code, validates, drives the framebuffer, talks to scoring.
+- **`ocrcade-vision.service`** — the camera daemon (`daemon.py`). The state machine.
+
+```bash
+# on kepler
+sudo systemctl status ocrcade-exec ocrcade-vision
+sudo systemctl restart ocrcade-vision        # after a config change
+journalctl -u ocrcade-vision -f              # watch it run
+curl -s http://127.0.0.1:5000/health         # {"status":"ok"}
+```
+
+Runtime dependencies are already installed on kepler: OpenCV (incl. `cv2.aruco`),
+`picamera2`, `requests`, `PyYAML`, `lgpio`. The code-reading model is **not** on
+kepler — it's the Ollama GPU.
+
+### Deploy (updating the code)
+Back up the running copy, sync code, restart. Event data (`teams.json`,
+`flag_config.json`, `.env`, `flags/`, `puzzles/`, `konami_config.json`) is preserved
+across deploys; the old copy is kept for instant revert.
+
+---
+
+## 6. The button — wiring & configuration
+
+The button is how a player confirms "this read is correct, submit it." Until one is
+wired, the system uses **AutoConfirm** (auto-submits after showing the read-back for
+a few seconds), so it works without hardware.
+
+### Wiring (active-low, internal pull-up)
+A momentary push-button between a GPIO pin and ground. No resistor needed — the Pi's
+internal pull-up is enabled in software.
+
+```
+   Pi 5 40-pin header
+   ┌──────────────────┐
+   │ ... GPIO17 (pin 11) ●───────┐
+   │     GND    (pin 9)  ●──┐     │
+   └──────────────────┘     │     │
+                            │   ┌─┴─┐
+                            └───┤   ├───  momentary push-button
+                                └───┘
+   Pressed  → pin reads LOW  (0)
+   Released → pin reads HIGH (1, pulled up)
+```
+
+Default pin is **GPIO17 (header pin 11)** with ground on **pin 9**. Any free GPIO
+works — set it in config.
+
+### Configuration (`config.yaml`, `button:` section)
+```yaml
+button:
+  mode: "auto"      # "auto" = AutoConfirm (no button). Set "gpio" to use the button.
+  gpio_pin: 17      # BCM GPIO number (17 = header pin 11)
+  chip: 0           # gpiochip; 0 is correct for the Pi 5 main header
+```
+To enable the button: wire it, set `mode: gpio`, `sudo systemctl restart ocrcade-vision`.
+A press is detected as a fresh HIGH→LOW edge (debounced). If the read-back times out
+with no press (`readback.timeout_s`), the turn is cancelled and it returns to "show
+your card."
+
+The button uses **lgpio** (the correct GPIO library for the Pi 5's RP1 chip;
+`RPi.GPIO` does not work reliably there).
+
+---
+
+## 7. Roster (team identity)
+
+Teams **pre-register**; their names go in `config.yaml`. The team a player writes in
+their code (`# team: NAME`) is fuzzy-matched to this list, so a one-character misread
+still lands on the right team.
+
+```yaml
+roster:
+  cutoff: 0.6                 # match strictness (0–1); lower = more forgiving
+  names: ["Megad00mer", "Anael", "byte_me", "Team Rocket"]
+  # path: "teams_roster.txt"  # OR a newline-delimited file (added to names)
+```
+
+If the roster is **empty**, the feature is treated as *off*: whatever team name is
+read is accepted verbatim (so the game still works for testing). Fill it before a
+real event to get misread-recovery and to reject walk-ups.
+
+---
+
+## 8. The puzzle cards (ArUco)
+
+Generate the printable cards once and print them:
+
+```bash
+python3 tools/make_puzzle_cards.py --out puzzle_cards --sheet
+```
+
+This writes 18 cards — one per (puzzle, language) — each with a big ArUco marker and
+a human label like **"PUZZLE 2 · PYTHON"**, plus a contact sheet. Print them, ideally
+on matte stock (less glare). The marker ID → (puzzle, language) mapping is fixed in
+`vision/markers.py`; you don't need to configure anything unless you re-map it.
+
+Players make their **code** cards with `tools/card_generator.html` (or just show code
+on a laptop) — see the Player Guide.
+
+---
+
+## 9. Running an event (operator runbook)
+
+**Before doors open**
+1. Generate + print the 18 puzzle cards (§8). Lay them out where teams can grab them.
+2. Put the registered teams in `roster.names` (§7).
+3. Confirm the GPU is up: `curl 10.0.9.150:11434/api/tags` lists `qwen2.5vl:7b`.
+4. Wire + enable the button if using one (§6).
+5. `sudo systemctl restart ocrcade-exec ocrcade-vision`; confirm `/health` is ok and
+   the daemon log says `degraded=False`.
+6. Dry-run one card of each puzzle yourself under the real lighting (see §10 tuning).
+
+**During play** — a team:
+1. grabs the **Puzzle·Lang card** and shows it → screen says *"Puzzle N · Lang"*
+2. shows their **code** (with `# team: NAME`) → screen shows the read-back
+3. checks it and presses **GO** → it runs and scores; or re-shows to re-read.
+
+**Watch the daemon log** (`journalctl -u ocrcade-vision -f`) — it narrates every
+SELECT, read, team match, and submit.
+
+---
+
+## 10. Tuning for the room
+
+Lighting and camera angle matter more than anything else.
+
+- **Gate** (`config.yaml`, `gating:`): if good cards aren't triggering, lower
+  `blur_min` (default 60); if junk frames fire, raise it. `stable_frames` is how long
+  (in frames at `scan_fps`) a card must be held still. These were validated on 323
+  real cards — start from the defaults.
+- **Marker selection** (`select.marker_stable_frames`): how many frames the puzzle
+  card must be seen to select. Raise it if cards select too eagerly.
+- **Camera**: square-on, filling the frame, no glare. `camera.rotate` (0/90/180/270)
+  if the camera is mounted sideways.
+- **Read-back hold** (`readback.hold_s`, auto mode): how long the read shows before
+  auto-submit. Irrelevant once the button is enabled.
+
+---
+
+## 11. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|--------|--------------|-----|
+| daemon log: `degraded=True` | GPU/Ollama unreachable | check the 4090 + network; `curl …:11434/api/tags` |
+| code reads always abstain | bad lighting / GPU model missing | improve light; `ollama pull qwen2.5vl:7b` on the GPU |
+| puzzle card never selects | marker out of frame / glare | fill frame with the card; matte print; lower `select.marker_stable_frames` |
+| "TEAM NOT RECOGNISED" | team not in roster / no `# team:` line | add to `roster.names`; ensure the code has the comment |
+| button does nothing | `mode` still `auto`, or wiring | set `button.mode: gpio`; check pin/GND; restart |
+| nothing on the monitor | exec service / framebuffer | `systemctl status ocrcade-exec`; check `/dev/fb0` |
+| exec won't start | port 5000 busy / config | `journalctl -u ocrcade-exec`; ensure old copy stopped |
+
+**Revert to the previous version:** the deploy keeps the prior tree; stop the
+services, restore it, and restart (the deploy notes record the exact backup path).
+
+---
+
+## 12. Advice & recommendations
+
+- **Lighting is 90% of reliability.** A diffuse light on the card area and a matte
+  surface beats any software tuning. Avoid a single hard light that reflects off
+  laptop screens into the camera.
+- **Use the button for a real event.** AutoConfirm is fine for testing, but at an
+  event the button gives players control and stops a misread from auto-scoring. A big
+  arcade-style button is more fun and more obvious than a tiny tactile one.
+- **Fill the roster.** It's the safety net that makes team names bulletproof; without
+  it a misread name is accepted as-is.
+- **A dedicated VLM endpoint** would harden things: the 4090 is a shared workstation,
+  and we saw it throw a transient 500 mid-run under load. A small always-on Ollama
+  instance pinned to `qwen2.5vl:7b` (short `keep_alive`) avoids contention.
+- **Mazes and stacked parens are the misread-prone cases** — the read-back exists
+  exactly for these; tell players to glance at long strings before pressing GO.
+- **Keep the old version around** until a new one is proven on-device. Every deploy
+  is reversible by design.
+- **Offline degradation is honest, not silent**: if the GPU link drops, code puzzles
+  say so and the camera games keep working — good for a venue with flaky wifi, but
+  bring the GPU on the same wired LAN if you can.
+
+### Possible future improvements
+- A dedicated read-back screen (currently shown via the preview view).
+- Per-team ArUco cards if you ever want scored team-vs-team camera rounds.
+- A small always-on VLM box to remove the shared-GPU dependency.
+- Auto-detected camera rotation, so the mount orientation doesn't need config.
