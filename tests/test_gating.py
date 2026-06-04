@@ -5,9 +5,13 @@ The cards are LIGHT text on a DARK screen, so the Otsu content fraction runs hig
 the gate. These tests pin the corrected behaviour: blur is the card detector, and
 content is only a loose sanity bracket that must NOT reject a normal card.
 """
-import numpy as np
+import pytest
 
-from vision.gating import FrameGate
+# Vision deps (numpy/cv2) aren't installed in the lightweight CI env; skip there.
+np = pytest.importorskip("numpy")
+pytest.importorskip("cv2")
+
+from vision.gating import FrameGate  # noqa: E402  (after importorskip guard)
 
 
 def _card_frame() -> np.ndarray:
