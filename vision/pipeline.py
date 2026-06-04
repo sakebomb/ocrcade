@@ -1,0 +1,207 @@
+"""OCRcade capture pipeline — the ArUco-model state machine.
+
+    IDLE     ── stable puzzle marker ──▶ SELECTED   (puzzle 5/6 ▶ run challenge)
+    SELECTED ── gate fires on code ────▶ READBACK   (VLM read code + roster team)
+    READBACK ── confirm GO ───────────▶ submit ▶ IDLE
+             ── cancel / timeout ─────▶ IDLE
+    (a different marker in any state re-selects)
+
+The logic is collaborator-injected (markers / gate / reader / ui / confirm /
+submit / challenge) and clock-injected, so it unit-tests with fakes — no camera,
+GPU, or real time. `daemon.py` wires the concrete IMX500 + VLM + display in.
+"""
+from __future__ import annotations
+
+import logging
+import time
+from collections.abc import Callable
+from enum import StrEnum
+from typing import Protocol
+
+from game.roster import resolve_team
+
+from .schema import CardReading
+
+log = logging.getLogger("ocrcade.pipeline")
+
+
+class State(StrEnum):
+    IDLE = "idle"
+    SELECTED = "selected"
+    READBACK = "readback"
+
+
+class UI(Protocol):
+    """Display surface (daemon posts these to the exec/display server)."""
+    def thumb(self, frame) -> None: ...
+    def await_card(self) -> None: ...
+    def await_code(self, puzzle: int, lang: str, progress: float) -> None: ...
+    def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None: ...
+    def feedback(self, title: str, detail: str) -> None: ...
+
+
+class ConfirmSource(Protocol):
+    """Read-back confirmation. Pollable so the loop never blocks.
+    `arm()` starts a fresh wait; `poll()` returns 'go' | 'cancel' | None."""
+    def arm(self) -> None: ...
+    def poll(self) -> str | None: ...
+
+
+class AutoConfirm:
+    """Phase-B default: auto-submit after showing the read-back for `hold_s`.
+    Replaced by a GPIO button (ButtonConfirm) in Phase C."""
+    def __init__(self, hold_s: float = 4.0, now: Callable[[], float] = time.monotonic):
+        self.hold_s = hold_s
+        self._now = now
+        self._armed_at = 0.0
+
+    def arm(self) -> None:
+        self._armed_at = self._now()
+
+    def poll(self) -> str | None:
+        return "go" if self._now() - self._armed_at >= self.hold_s else None
+
+
+class Pipeline:
+    def __init__(self, *, markers, gate, reader, roster: list[str], ui: UI,
+                 submit: Callable[[dict], None], confirm: ConfirmSource,
+                 challenge: Callable[[int, str], None],
+                 marker_stable_frames: int = 2, roster_cutoff: float = 0.6,
+                 select_timeout_s: float = 60.0, readback_timeout_s: float = 30.0,
+                 cooldown_s: float = 20.0, now: Callable[[], float] = time.monotonic):
+        self.markers = markers
+        self.gate = gate
+        self.reader = reader
+        self.roster = roster
+        self.ui = ui
+        self.submit = submit
+        self.confirm = confirm
+        self.challenge = challenge
+        self.marker_stable_frames = marker_stable_frames
+        self.roster_cutoff = roster_cutoff
+        self.select_timeout_s = select_timeout_s
+        self.readback_timeout_s = readback_timeout_s
+        self.cooldown_s = cooldown_s
+        self._now = now
+
+        self.state = State.IDLE
+        self._puzzle: int | None = None
+        self._lang: str | None = None
+        self._sel_marker_id: int | None = None
+        self._marker_run_id: int | None = None
+        self._marker_run = 0
+        self._t_state = 0.0
+        self._cooldown_until = 0.0
+        self._pending: CardReading | None = None
+
+    # --- one scan tick: lores for detect/gate, grab_main() for the hi-res read ---
+    def on_frame(self, lores, grab_main: Callable[[], object]) -> State:
+        self.ui.thumb(lores)
+        if self._now() < self._cooldown_until:
+            return self.state
+        if self.state is State.IDLE:
+            self._tick_idle(lores)
+        elif self.state is State.SELECTED:
+            self._tick_selected(lores, grab_main)
+        elif self.state is State.READBACK:
+            self._tick_readback()
+        return self.state
+
+    def _tick_idle(self, lores) -> None:
+        m = self._stable_marker(lores)
+        if m is None:
+            self.ui.await_card()
+            return
+        self._select(m)
+
+    def _tick_selected(self, lores, grab_main) -> None:
+        # a different puzzle card in view → switch puzzles
+        m = self.markers.pick(lores)
+        if m is not None and m.marker_id != self._sel_marker_id:
+            self._select_reset()
+            self._select(m)
+            return
+        if self._now() - self._t_state > self.select_timeout_s:
+            log.info("SELECTED timeout → IDLE")
+            self._to_idle()
+            return
+        fired = self.gate.update(lores)
+        if self.gate.last.get("has_text"):
+            self.ui.await_code(self._puzzle, self._lang, self.gate.last.get("progress", 0.0))
+        if fired:
+            self._read(grab_main())
+
+    def _tick_readback(self) -> None:
+        decision = self.confirm.poll()
+        if decision == "go":
+            self._do_submit()
+        elif decision == "cancel" or self._now() - self._t_state > self.readback_timeout_s:
+            log.info("read-back cancelled/timed out → IDLE")
+            self._to_idle()
+
+    # --- transitions ---
+    def _select(self, m) -> None:
+        if m.puzzle in (5, 6):
+            log.info(f"camera-challenge marker → puzzle {m.puzzle}")
+            self.challenge(m.puzzle, m.lang)      # daemon owns camera handoff + team
+            self._cooldown()
+            self._to_idle()
+            return
+        self._puzzle, self._lang, self._sel_marker_id = m.puzzle, m.lang, m.marker_id
+        self.state = State.SELECTED
+        self._t_state = self._now()
+        self.gate.reset()
+        log.info(f"SELECTED puzzle={m.puzzle} lang={m.lang} (marker {m.marker_id})")
+        self.ui.await_code(m.puzzle, m.lang, 0.0)
+
+    def _read(self, main) -> None:
+        r = self.reader.read_code(main)
+        if not r.readable:
+            self.ui.feedback("CARD NOT READ", (r.reason or "could not read")[:48])
+            self.gate.reset()                     # stay SELECTED — let them retry
+            return
+        team = resolve_team(r.code, self.roster, self.roster_cutoff)
+        if team is None:
+            self.ui.feedback("TEAM NOT RECOGNISED", "add '# team: NAME' (registered)")
+            self.gate.reset()
+            return
+        self._pending = CardReading(readable=True, puzzle=self._puzzle, lang=self._lang,
+                                    team=team, code=r.code, backend=r.backend,
+                                    latency_s=r.latency_s)
+        self.state = State.READBACK
+        self._t_state = self._now()
+        self.confirm.arm()
+        self.ui.readback(self._puzzle, self._lang, team, r.code or "")
+        log.info(f"READBACK puzzle={self._puzzle} team={team!r} ({len(r.code or '')} chars)")
+
+    def _do_submit(self) -> None:
+        p = self._pending
+        if p is not None:
+            log.info(f"submit P{p.puzzle} team={p.team!r} ({len(p.code or '')} chars)")
+            self.submit({"puzzle": p.puzzle, "team": p.team, "lang": p.lang, "code": p.code})
+        self._cooldown()
+        self._to_idle()
+
+    # --- helpers ---
+    def _stable_marker(self, lores):
+        m = self.markers.pick(lores)
+        mid = m.marker_id if m else None
+        if mid is not None and mid == self._marker_run_id:
+            self._marker_run += 1
+        else:
+            self._marker_run_id = mid
+            self._marker_run = 1 if mid is not None else 0
+        return m if (m is not None and self._marker_run >= self.marker_stable_frames) else None
+
+    def _select_reset(self) -> None:
+        self._marker_run_id = None
+        self._marker_run = 0
+
+    def _to_idle(self) -> None:
+        self.state = State.IDLE
+        self._puzzle = self._lang = self._sel_marker_id = self._pending = None
+        self._select_reset()
+        self.ui.await_card()
+
+    def _cooldown(self) -> None:
+        self._cooldown_until = self._now() + self.cooldown_s

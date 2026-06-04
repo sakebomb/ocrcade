@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""OCRcade vision daemon (runs on kepler).
+"""OCRcade vision daemon (runs on kepler) — ArUco model.
 
-Loop: capture lores → gate (blur/stability/content) → on a stable card, capture a
-sharp frame → VLM read → route:
-  - unreadable        → /feedback (honest "couldn't read", no hallucinated submit)
-  - puzzle 5 (Konami) → camera challenge, then /submit token
-  - puzzle 6 (Fruit Ninja) → release camera, run game, reopen, /submit token
-  - complete code card → /submit {puzzle, team, lang, code}
-  - incomplete        → /feedback
+Wires the real IMX500 camera, ArUco marker detector, blur/stability gate, GPU VLM
+code reader, roster, and the exec/display server into vision.pipeline.Pipeline:
 
-The gate is what keeps the VLM honest: only sharp, stable, text-bearing frames are
-sent, so the model isn't handed blank/blurry frames that make it confabulate.
+    show Puzzle·Lang ArUco card → SELECT(puzzle, lang)
+    show code → gate fires → VLM reads code → roster-match the `# team:` line
+              → read-back → (confirm) → /submit
+    puzzles 5/6 → camera challenge (Konami / Fruit Ninja)
+
+All the state-machine logic lives in vision/pipeline.py (unit-tested); this module
+is just the concrete wiring + the camera-challenge handoff.
 """
 from __future__ import annotations
 
@@ -23,9 +23,12 @@ import time
 import cv2
 import requests
 
+from game.roster import resolve_team
 from vision import load_config
 from vision.capture import Camera
 from vision.gating import FrameGate
+from vision.markers import MarkerDetector
+from vision.pipeline import AutoConfirm, Pipeline
 from vision.vlm_client import VLMClient, from_config
 
 logging.basicConfig(level=logging.INFO,
@@ -33,8 +36,7 @@ logging.basicConfig(level=logging.INFO,
                     handlers=[logging.StreamHandler(sys.stdout)])
 log = logging.getLogger("ocrcade.daemon")
 
-THUMB_INTERVAL = 0.5    # seconds between alignment thumbnails to the display
-# Shared secret for the server's internal endpoints (empty → server has auth off).
+THUMB_INTERVAL = 0.5
 _OP_TOKEN = os.environ.get("OCRCADE_OPERATOR_TOKEN", "")
 _OP_HEADERS = {"X-Operator-Token": _OP_TOKEN} if _OP_TOKEN else None
 
@@ -55,25 +57,90 @@ def _thumb_b64(frame_bgr) -> str:
     return base64.b64encode(jpeg.tobytes()).decode() if ok else ""
 
 
+def _load_roster(cfg: dict) -> list[str]:
+    """Registered team names: inline `names:` plus optional newline-delimited file."""
+    names = list(cfg.get("names", []))
+    path = cfg.get("path")
+    if path:
+        try:
+            with open(path) as f:
+                names += f.read().splitlines()
+        except OSError as e:
+            log.warning(f"roster file {path} unreadable: {e}")
+    roster = [n.strip() for n in names if n and n.strip()]
+    log.info(f"roster: {len(roster)} registered teams")
+    return roster
+
+
+class ServerUI:
+    """Posts pipeline UI events to the exec/display server. Throttles thumbnails."""
+    def __init__(self, exec_url: str):
+        self.preview_url = f"{exec_url}/preview"
+        self.feedback_url = f"{exec_url}/feedback"
+        self.feed_url = f"{exec_url}/camera_feed"
+        self._last_thumb = 0.0
+
+    def thumb(self, frame) -> None:
+        now = time.monotonic()
+        if now - self._last_thumb >= THUMB_INTERVAL:
+            _post(self.feed_url, {"thumb": _thumb_b64(frame)}, timeout=1)
+            self._last_thumb = now
+
+    def await_card(self) -> None:
+        _post(self.preview_url, {"ocr_lines": ["Show your PUZZLE card",
+                                               "(the Puzzle · Lang marker)"],
+                                 "stability": 0.0, "max_stability": 1.0,
+                                 "source_type": "camera"}, timeout=1)
+
+    def await_code(self, puzzle: int, lang: str, progress: float) -> None:
+        _post(self.preview_url, {"ocr_lines": [f"Puzzle {puzzle} · {lang}",
+                                               "Show your code, hold steady…"],
+                                 "stability": progress, "max_stability": 1.0,
+                                 "source_type": "camera"}, timeout=1)
+
+    def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None:
+        lines = [f"Puzzle {puzzle} · {lang} · team {team}", "READ:"]
+        lines += (code or "").splitlines()[:12]
+        _post(self.preview_url, {"ocr_lines": lines, "stability": 1.0,
+                                 "max_stability": 1.0, "source_type": "readback"}, timeout=2)
+
+    def feedback(self, title: str, detail: str) -> None:
+        _post(self.feedback_url, {"error": detail, "ocr_lines": [title, detail]})
+
+
 class Daemon:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.cam_cfg = cfg["camera"]
         g = cfg["gating"]
         self.scan_fps = g["scan_fps"]
-        self.cooldown_s = g["cooldown_s"]
         exec_url = cfg["exec"]["url"].rstrip("/")
         self.submit_url = f"{exec_url}/submit"
         self.feedback_url = f"{exec_url}/feedback"
-        self.preview_url = f"{exec_url}/preview"
-        self.feed_url = f"{exec_url}/camera_feed"
         self.client: VLMClient = from_config(cfg["vlm"])
-        self.gate = FrameGate(
-            blur_min=g["blur_min"], stable_frames=g["stable_frames"],
-            stable_diff_max=g["stable_diff_max"], min_content=g["min_content"],
-            max_content=g.get("max_content", 0.97),
-        )
+        self.roster = _load_roster(cfg.get("roster", {}))
+        self.roster_cutoff = float(cfg.get("roster", {}).get("cutoff", 0.6))
+
+        gate = FrameGate(blur_min=g["blur_min"], stable_frames=g["stable_frames"],
+                         stable_diff_max=g["stable_diff_max"], min_content=g["min_content"],
+                         max_content=g.get("max_content", 0.97))
+        markers = MarkerDetector(
+            mapping={int(k): tuple(v) for k, v in cfg.get("markers", {}).get("map", {}).items()}
+            or None,
+            dict_name=cfg.get("markers", {}).get("dict", "DICT_4X4_50"))
+        ui = ServerUI(exec_url)
+        rb = cfg.get("readback", {})
+        confirm = AutoConfirm(hold_s=float(rb.get("hold_s", 4.0)))
+
         self.cam = self._new_camera()
+        self.pipeline = Pipeline(
+            markers=markers, gate=gate, reader=self.client, roster=self.roster, ui=ui,
+            submit=lambda p: _post(self.submit_url, p, timeout=10), confirm=confirm,
+            challenge=self._run_challenge, roster_cutoff=self.roster_cutoff,
+            marker_stable_frames=int(cfg.get("select", {}).get("marker_stable_frames", 2)),
+            select_timeout_s=float(cfg.get("select", {}).get("timeout_s", 60.0)),
+            readback_timeout_s=float(rb.get("timeout_s", 30.0)),
+            cooldown_s=float(g.get("cooldown_s", 20.0)))
 
     def _new_camera(self) -> Camera:
         return Camera(main_size=self.cam_cfg["main_size"],
@@ -81,64 +148,44 @@ class Daemon:
                       rotate=self.cam_cfg.get("rotate", 0))
 
     def run(self) -> None:
-        log.info(f"Daemon started (degraded={self.client.degraded})")
-        cooldown_until = 0.0
-        last_thumb = 0.0
+        log.info(f"Daemon started (degraded={self.client.degraded}, "
+                 f"roster={len(self.roster)})")
         while True:
-            now = time.time()
-            if now < cooldown_until:
-                time.sleep(0.2)
-                continue
-            lores = self.cam.lores()
-            if now - last_thumb >= THUMB_INTERVAL:
-                _post(self.feed_url, {"thumb": _thumb_b64(lores)}, timeout=1)
-                last_thumb = now
-
-            fire = self.gate.update(lores)
-            if self.gate.last.get("has_text"):
-                _post(self.preview_url, {
-                    "ocr_lines": ["Hold the card steady…"],
-                    "stability": self.gate.last["progress"],
-                    "max_stability": 1.0, "source_type": "camera",
-                }, timeout=1)
-
-            if fire:
-                try:
-                    self._read_and_route()
-                except Exception as exc:  # one bad read must never kill the loop
-                    log.exception(f"_read_and_route crashed: {exc}")
-                finally:
-                    cooldown_until = time.time() + self.cooldown_s
-                    self.gate.reset()
-
+            try:
+                lores = self.cam.lores()
+                self.pipeline.on_frame(lores, self.cam.main)
+            except Exception as exc:  # one bad frame must never kill the loop
+                log.exception(f"pipeline tick crashed: {exc}")
             time.sleep(1.0 / self.scan_fps)
 
-    def _read_and_route(self) -> None:
-        frame = self.cam.main()
-        r = self.client.read_card(frame)
+    # --- camera challenges (puzzles 5/6) -----------------------------------
+    # NOTE: in the ArUco model the challenge card carries no team. We capture the
+    # team from a `# team:` frame first (OPEN UX question — flagged to user).
+    def _capture_team(self, timeout_s: float = 15.0) -> str | None:
+        g = self.cfg["gating"]
+        gate = FrameGate(blur_min=g["blur_min"], stable_frames=g["stable_frames"],
+                         stable_diff_max=g["stable_diff_max"], min_content=g["min_content"],
+                         max_content=g.get("max_content", 0.97))
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if gate.update(self.cam.lores()):
+                r = self.client.read_code(self.cam.main())
+                if r.readable:
+                    team = resolve_team(r.code, self.roster, self.roster_cutoff)
+                    if team:
+                        return team
+                gate.reset()
+            time.sleep(1.0 / self.scan_fps)
+        return None
 
-        if not r.readable:
-            reason = r.reason or "Could not read the card"
-            log.info(f"unreadable: {reason}")
-            _post(self.feedback_url, {"error": reason,
-                                      "ocr_lines": ["CARD NOT READ", reason[:48]]})
-            return
-
-        team = r.team or "UNKNOWN"
-
-        if r.puzzle == 5:
+    def _run_challenge(self, puzzle: int, lang: str) -> None:
+        _post(self.feedback_url, {"error": "", "ocr_lines": [
+            f"Puzzle {puzzle} challenge", "Show your team line, then play"]})
+        team = self._capture_team() or "UNKNOWN"
+        if puzzle == 5:
             self._run_konami(team)
-        elif r.puzzle == 6:
+        elif puzzle == 6:
             self._run_fruit_ninja(team)
-        elif r.is_complete_code_card():
-            log.info(f"submit P{r.puzzle} team={team!r} ({len(r.code)} chars)")
-            _post(self.submit_url, {"puzzle": r.puzzle, "team": team,
-                                    "lang": r.lang, "code": r.code}, timeout=10)
-        else:
-            _post(self.feedback_url, {
-                "error": "Incomplete card – need Puzzle, Team, Lang, and code",
-                "ocr_lines": [f"Puzzle: {r.puzzle}", f"Team: {team}",
-                              f"Lang: {r.lang}", "(code missing/unclear)"]})
 
     def _run_konami(self, team: str) -> None:
         from challenges.konami_detector import KonamiDetector
@@ -158,9 +205,6 @@ class Daemon:
         try:
             ok, score = fruit_ninja_runner.run(self.submit_url)
         finally:
-            # GStreamer may hold the device briefly after the subprocess exits —
-            # retry the reopen; if it truly can't reopen, re-raise so the loop guard
-            # logs it rather than us silently looping on a dead camera.
             for attempt in range(3):
                 try:
                     self.cam = self._new_camera()

@@ -32,6 +32,28 @@ camera:
   lores_size: [640, 480]
   rotate: 0               # submit snaps were upright; set 90/180/270 if the mount changes
 
+# --- ArUco model (puzzle/lang from a marker card; team from a `# team:` line) ---
+markers:
+  dict: "DICT_4X4_50"   # cv2.aruco dictionary; 50 IDs, robust 4x4
+  # map: {}             # optional ID -> [puzzle, lang] override; empty = default 1..18
+
+select:
+  marker_stable_frames: 2   # consecutive frames a puzzle marker must be seen to select
+  timeout_s: 60             # give up waiting for code, return to "show your card"
+
+roster:
+  cutoff: 0.6           # difflib match threshold for fuzzy team-name recovery
+  names: []             # registered team names (inline). Or set `path:` to a newline file
+  # path: "teams_roster.txt"
+
+readback:
+  hold_s: 4.0           # Phase B: auto-submit after showing the read-back this long
+  timeout_s: 30         # max wait for a confirm before returning to idle
+
+button:                 # Phase C — physical confirm button (lgpio on Pi 5)
+  mode: "auto"          # auto = AutoConfirm (no button yet); gpio = ButtonConfirm
+  gpio_pin: 17          # BCM GPIO17 (header pin 11), internal pull-up, active-low
+
 exec:
   url: "http://127.0.0.1:5000"   # the local Flask exec/display server
 

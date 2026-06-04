@@ -100,6 +100,12 @@ class HailoVLMBackend:
         return CardReading(readable=False, puzzle=n, backend=self.name, latency_s=dt,
                            reason="hailo coarse: number-only, GPU needed to read code")
 
+    def read_code(self, image_bgr: np.ndarray) -> CardReading:
+        """The Hailo 2B provably cannot transcribe code (Phase 0) — always abstain.
+        Present so it satisfies the VLMBackend protocol; the client never routes
+        code reads here."""
+        return CardReading.unreadable("hailo cannot read code (GPU required)", self.name)
+
     def release(self) -> None:
         try:
             if self._vlm is not None:
