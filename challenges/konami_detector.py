@@ -14,6 +14,7 @@ Sequence: ↑ ↑ ↓ ↓ ← → ← → ✕ □
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -24,6 +25,10 @@ from picamera2 import Picamera2
 
 log = logging.getLogger('ocrcade.konami')
 log.setLevel(logging.DEBUG)
+
+# Shared secret for the server's internal endpoints (empty → server has auth off).
+_OP_TOKEN = os.environ.get('OCRCADE_OPERATOR_TOKEN', '')
+_OP_HEADERS = {'X-Operator-Token': _OP_TOKEN} if _OP_TOKEN else None
 
 KONAMI_SEQUENCE = [
     'UP', 'UP', 'DOWN', 'DOWN',
@@ -260,6 +265,7 @@ class KonamiDetector:
                     'ready_countdown': ready_countdown,
                 },
                 timeout=2,
+                headers=_OP_HEADERS,
             )
         except requests.RequestException:
             pass

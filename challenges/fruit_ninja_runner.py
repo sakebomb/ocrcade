@@ -15,6 +15,7 @@ Flow:
 
 import json
 import logging
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -22,6 +23,10 @@ from pathlib import Path
 import requests
 
 log = logging.getLogger('ocrcade.fruitage')
+
+# Shared secret for the server's internal endpoints (empty → server has auth off).
+_OP_TOKEN = os.environ.get('OCRCADE_OPERATOR_TOKEN', '')
+_OP_HEADERS = {'X-Operator-Token': _OP_TOKEN} if _OP_TOKEN else None
 
 SCORE_THRESHOLD = 100   # pts required to win (≈10 fruits sliced)
 GAME_TIMEOUT    = 210   # max wait: 60s game + countdown + game-over + startup slack
@@ -47,7 +52,7 @@ def run(exec_pi_url: str) -> tuple[bool, int]:
 
     # Pause the OCRcade display — shows "FRUIT NINJA CHALLENGE" then freezes fb0
     try:
-        requests.post(f'{base_url}/fruitage_pause', timeout=5)
+        requests.post(f'{base_url}/fruitage_pause', timeout=5, headers=_OP_HEADERS)
         log.info("Display paused for Fruit Ninja")
     except requests.RequestException as e:
         log.warning(f"Could not pause display: {e}")
@@ -77,7 +82,7 @@ def run(exec_pi_url: str) -> tuple[bool, int]:
 
         # Resume OCRcade display
         try:
-            requests.post(f'{base_url}/fruitage_resume', timeout=5)
+            requests.post(f'{base_url}/fruitage_resume', timeout=5, headers=_OP_HEADERS)
             log.info("Display resumed after Fruit Ninja")
         except requests.RequestException as e:
             log.warning(f"Could not resume display: {e}")

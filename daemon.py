@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import sys
 import time
 
@@ -33,11 +34,14 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("ocrcade.daemon")
 
 THUMB_INTERVAL = 0.5    # seconds between alignment thumbnails to the display
+# Shared secret for the server's internal endpoints (empty → server has auth off).
+_OP_TOKEN = os.environ.get("OCRCADE_OPERATOR_TOKEN", "")
+_OP_HEADERS = {"X-Operator-Token": _OP_TOKEN} if _OP_TOKEN else None
 
 
 def _post(url: str, payload: dict, timeout: float = 5.0) -> None:
     try:
-        requests.post(url, json=payload, timeout=timeout)
+        requests.post(url, json=payload, timeout=timeout, headers=_OP_HEADERS)
     except requests.RequestException as e:
         log.debug(f"POST {url} failed: {e}")
 
