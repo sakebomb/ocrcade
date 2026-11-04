@@ -13,8 +13,9 @@ Hardening (see SECURITY review):
   unlike subprocess preexec_fn in a threaded server.)
 - C++ is compiled INSIDE the sandbox too, so malicious source can't #include host
   files as a read-oracle.
-- One run at a time (a busy slot is reported, not queued), and every command starts
-  inside a cgroup capping the whole run: 1 GB of memory, no swap, 64 processes
+- One run at a time (a busy slot is reported, not queued). With OCRCADE_SANDBOX_CGROUP=1
+  (ocrcade-exec.service sets it; see _make_cgroup), every command starts inside a
+  cgroup capping the whole run: 1 GB of memory, no swap, 64 processes
   (game/sandbox_cgroup.py). The per-process ulimits alone would let 64 processes take
   64 GB between them.
 

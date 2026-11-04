@@ -82,7 +82,8 @@ class RunCgroup:
         if "pids" not in wanted:
             raise OSError("pids controller not available")
         if not os.access(self.root / "cgroup.subtree_control", os.W_OK):
-            raise OSError("cgroup.subtree_control is not writable (Delegate=yes missing?)")
+            raise OSError("cgroup.subtree_control is not writable "
+                          "(Delegate=memory pids missing from the unit?)")
         server = self.root / "server"
         server.mkdir(exist_ok=True)
         for pid in (self.root / "cgroup.procs").read_text().split():

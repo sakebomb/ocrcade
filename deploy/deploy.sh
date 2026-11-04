@@ -71,10 +71,18 @@ for _ in $(seq 1 20); do
   if curl -fsS --max-time 2 "$health_url" >/dev/null 2>&1; then break; fi
   sleep 1
 done
-curl -fsS --max-time 2 "$health_url" >/dev/null || {
+health="$(curl -fsS --max-time 2 "$health_url")" || {
   echo "health check failed: $health_url" >&2
   exit 1
 }
+# The server runs fine without the sandbox memory cap (it falls back to per-process
+# ulimits), so a lost Delegate= or OCRCADE_SANDBOX_CGROUP=1 would otherwise go unseen.
+python3 -c '
+import json, sys
+h = json.loads(sys.argv[1])
+if h.get("sandbox_memory_cap") is not True:
+    sys.exit("sandbox memory cap is off: " + str(h.get("sandbox_cgroup")))
+' "$health"
 # The vision daemon has no health endpoint, and a unit that crashes at startup still
 # reads `active` for a moment. Wait past the units' RestartSec=3, then require each unit
 # to be active with no automatic restart since ours.
@@ -86,7 +94,7 @@ for u in "${units[@]}"; do
     exit 1
   fi
 done
-echo "services up, /health ok"
+echo "services up, /health ok, sandbox memory cap on"
 REMOTE
 
 echo "deployed ${commit:0:7} (was ${prev:0:7})"
