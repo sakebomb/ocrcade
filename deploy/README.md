@@ -31,7 +31,8 @@ git -C ~/ocrcade config receive.denyCurrentBranch updateInstead
 cp .env.example .env                      # fill OCRCADE_RTB_* 
 cp teams.example.json teams.json          # real bot creds
 cp flag_config.example.json flag_config.json
-# flags/flagN.txt (RTB tokens) and puzzles/level1/flag1.txt (puzzle answer)
+# flags/flagN.txt (RTB tokens) and puzzles/level1/flag1.txt (puzzle answer);
+# puzzles/level1/flag1.txt must be identical to flags/flag1.txt
 chmod 600 .env teams.json flag_config.json flags/*.txt
 
 # 3. konami button calibration (camera-specific)

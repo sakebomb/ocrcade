@@ -34,11 +34,19 @@ commit="$(git rev-parse --verify --quiet "${ref}^{commit}")" || {
   echo "unknown ref: $ref" >&2
   exit 1
 }
-prev="$(ssh "$host" git -C "$path" rev-parse HEAD)"
+prev="$(ssh "$host" git -C "$path" rev-parse refs/heads/deploy)"
+
+# The remote steps need sudo without a password; check before the push changes the tree.
+ssh "$host" sudo -n true || {
+  echo "$host: sudo needs a password; the remote steps cannot run" >&2
+  exit 1
+}
 
 echo "deploying $(git log --oneline -1 "$commit") to $host:$path"
 # --force so deploying an older commit (a rollback) is allowed.
 git push --force "$remote" "$commit:refs/heads/deploy"
+# From here the Pi runs the new code, so any failure must say how to get back.
+trap 'echo "deploy failed after the push; roll back with: deploy/deploy.sh ${prev:0:7}" >&2' ERR
 
 # Remote steps run under bash -s with the values passed as arguments, so nothing here
 # is re-parsed by the remote shell.
@@ -67,11 +75,16 @@ curl -fsS --max-time 2 "$health_url" >/dev/null || {
   echo "health check failed: $health_url" >&2
   exit 1
 }
+# The vision daemon has no health endpoint, and a unit that crashes at startup still
+# reads `active` for a moment. Wait past the units' RestartSec=3, then require each unit
+# to be active with no automatic restart since ours.
+sleep 6
 for u in "${units[@]}"; do
-  systemctl is-active --quiet "$u" || {
-    echo "$u is not active; see: journalctl -u $u -n 50" >&2
+  restarts="$(systemctl show -p NRestarts --value "$u")"
+  if ! systemctl is-active --quiet "$u" || [[ "$restarts" != 0 ]]; then
+    echo "$u is not running cleanly (restarts=$restarts); see: journalctl -u $u -n 50" >&2
     exit 1
-  }
+  fi
 done
 echo "services up, /health ok"
 REMOTE

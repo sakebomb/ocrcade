@@ -51,7 +51,8 @@ deploy/deploy.sh [REF]                          # push REF to kepler, restart, h
 | Models | `~/Qwen2-VL-2B-Instruct.hef`, `~/Qwen2-1.5B-Instruct.hef`; vision HEFs in `/usr/share/hailo-models/` (`*_h10.hef` are for this chip) |
 | Camera | IMX500 (2028x1520 used) |
 | Services | `ocrcade-exec`, `ocrcade-vision` (system python, not a venv) |
-| Run dir | `~/ocrcade`: a git checkout on branch `deploy`; frames are logged to `~/ocrcade-logs/` |
+| Run dir | `~/ocrcade`: a git checkout on branch `deploy` |
+| Logs | `journalctl -u ocrcade-vision` / `-u ocrcade-exec`. The current code saves no camera frames; `~/ocrcade-logs/` holds 482 screen-card frames from the earlier version |
 
 ## Invariants
 
@@ -59,14 +60,17 @@ deploy/deploy.sh [REF]                          # push REF to kepler, restart, h
   `flags/*.txt`, `puzzles/level*/flag*.txt`. `.gitignore` covers them; keep it that way.
 - **Never edit code on kepler.** Change it here and run `deploy/deploy.sh`. A hand edit
   blocks the next deploy by design.
-- **Device libraries import lazily** (`picamera2`, `hailo_platform`, `lgpio`) so the code
-  lints and tests off the Pi.
+- **Device libraries import lazily in `vision/` and `hw/`** (`picamera2`, `hailo_platform`,
+  `lgpio`) so that code lints and tests off the Pi. The `challenges/` scripts import them
+  at the top and only run on the Pi; no test imports them.
 - **The `readable:false` abstention in `vision/prompts.py` is load-bearing.** Without it
   the model invents a program for a blank frame. Keep an abstain path in any new reader.
 - **Player code is untrusted.** Every run goes through `game/sandbox_runner.py` (bwrap, no
   network, user namespace, ulimits). The puzzle folder at `/puzzle` is the intended route
   to each flag (level 1 prints `flag1.txt` from it); nothing else on the host should be
   reachable. Treat any sandbox change as security-sensitive.
+- **Puzzle 1's flag lives in two files that must match:** `puzzles/level1/flag1.txt` (what
+  the player prints from `/puzzle`) and `flags/flag1.txt` (what the validator checks).
 - **The Hailo chip is shared.** Fruit Ninja's pose pipeline and the VLM both use it, and
   whether they can run at the same time is untested. Check `sudo fuser -v /dev/hailo0`
   before an experiment.
