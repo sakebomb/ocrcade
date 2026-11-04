@@ -46,8 +46,27 @@ PIECE_ASPECT = 5.5          # target piece width / height; a cut may shift half 
                             # which must still fit the recognizer's 320/48 = 6.67
 PAD_Y, PAD_X = 0.35, 0.1    # crop padding, in line heights
 ROTATIONS = (0, 90, 180, 270)
+# Tuned on 479 logged event frames (docs/EVAL.md). Labelled cards read >= 37 chars at
+# >= 0.90 mean confidence; empty scenes and fragments fall below the abstain gate.
+UPRIGHT_ENOUGH = (20, 0.85)  # (chars, conf): accept the upright read, skip rotations
+ABSTAIN_BELOW = (15, 0.70)   # (chars, conf): fewer chars or lower conf -> "can't read"
 _ROTATE = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
            270: cv2.ROTATE_90_COUNTERCLOCKWISE}
+
+
+@dataclass(frozen=True)
+class OCRResult:
+    """One frame's read: the laid-out text, how many characters were kept, and their
+    mean confidence (0-1), from the rotation that won."""
+
+    text: str
+    chars: int
+    confidence: float
+    rotation: int
+
+    @property
+    def score(self) -> float:
+        return self.chars * self.confidence
 
 
 @dataclass(frozen=True)
@@ -99,6 +118,17 @@ def _rec_input(crop: np.ndarray) -> np.ndarray:
     return cv2.copyMakeBorder(r, 0, 0, 0, REC_W - nw, cv2.BORDER_CONSTANT, value=(128,) * 3)
 
 
+def _class_probs(out: np.ndarray) -> np.ndarray:
+    """Per-step class probabilities. PP-OCRv6 HEFs emit logits, other recognizers emit
+    probabilities already; softmax only the former. The softmax spans every class, so a
+    step that looks like a character code cannot hold keeps its low confidence after
+    the output is masked to ASCII."""
+    if out.min() >= 0 and np.allclose(out.sum(axis=-1), 1.0, atol=0.05):
+        return out
+    e = np.exp(out - out.max(axis=-1, keepdims=True))
+    return e / e.sum(axis=-1, keepdims=True)
+
+
 class HailoOCRBackend:
     name = "hailo-ocr"
 
@@ -115,7 +145,7 @@ class HailoOCRBackend:
 
     # -- device ------------------------------------------------------------------------
     def _ensure_loaded(self) -> bool:
-        """Load once. A failed load is remembered (and reported by read_text) instead of
+        """Load once. A failed load is remembered (and raised by read) instead of
         being retried on every frame."""
         if self._models:
             return True
@@ -179,7 +209,7 @@ class HailoOCRBackend:
 
     # -- reading -----------------------------------------------------------------------
     def _recognize(self, crop: np.ndarray) -> tuple[str, list[float]]:
-        p = self._infer("rec", _rec_input(crop))[0]
+        p = _class_probs(self._infer("rec", _rec_input(crop))[0])
         p = np.where(self._allow, p, -1.0)
         return ctc_decode(p.argmax(axis=1).tolist(), p.max(axis=1).tolist(), self._charset)
 
@@ -203,19 +233,20 @@ class HailoOCRBackend:
                 words.append(text)
         return words, confs
 
-    def _read_frame(self, rgb: np.ndarray) -> tuple[list[Segment], float]:
-        """All confident text lines in one orientation, and their summed confidence."""
+    def _read_frame(self, rgb: np.ndarray, rotation: int) -> OCRResult:
+        """All confident text lines in one orientation."""
         inp, lb = _letterbox(rgb, DET_W, DET_H)
         heat = self._infer("det", inp)[:, :, 0]
         mask = (heat > HEAT_ON).astype(np.uint8)
         n, _, stats, _ = cv2.connectedComponentsWithStats(mask)
         heights = [stats[i, 3] for i in range(1, n) if stats[i, 4] >= 20]
         if not heights:
-            return [], 0.0
+            return OCRResult("", 0, 0.0, rotation)
         k = max(3, int(np.median(heights) * LINE_MERGE))
         merged = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_RECT, (k, 1)))
         cnts, _ = cv2.findContours(merged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        segments, score = [], 0.0
+        segments: list[Segment] = []
+        kept: list[float] = []
         for c in cnts:
             x, y, w, h = cv2.boundingRect(c)
             inside = mask[y:y + h, x:x + w] > 0
@@ -238,30 +269,36 @@ class HailoOCRBackend:
             cols = np.flatnonzero(inside.any(axis=0))
             segments.append(Segment(top=y, bottom=y + h, left=x + int(cols[0]),
                                     right=x + int(cols[-1]) + 1, text=" ".join(words)))
-            score += float(np.sum(confs))
-        return segments, score
+            kept += confs
+        conf = float(np.mean(kept)) if kept else 0.0
+        return OCRResult(assemble(segments), len(kept), conf, rotation)
 
-    def read_text(self, image_bgr: np.ndarray) -> str:
-        """The code in the frame, laid out as lines. An empty string means no confident
-        text was found. Raises RuntimeError if the models could not be loaded."""
+    def read(self, image_bgr: np.ndarray) -> OCRResult:
+        """Read the frame upright; if that read is weak, also try the other rotations
+        and keep the most confident. Raises RuntimeError if the models failed to load."""
         if not self._ensure_loaded():
             raise RuntimeError(self._load_error or "Hailo OCR models are not loaded")
         rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-        best: tuple[list[Segment], float] = ([], 0.0)
+        best: OCRResult | None = None
         for rot in self.rotations:
             img = rgb if rot == 0 else cv2.rotate(rgb, _ROTATE[rot])
-            segs, score = self._read_frame(img)
-            if score > best[1]:
-                best = (segs, score)
-        return assemble(best[0])
+            r = self._read_frame(img, rot)
+            if best is None or r.score > best.score:
+                best = r
+            if rot == 0 and r.chars >= UPRIGHT_ENOUGH[0] \
+                    and r.confidence >= UPRIGHT_ENOUGH[1]:
+                break
+        return best or OCRResult("", 0, 0.0, 0)
 
     def read_code(self, image_bgr: np.ndarray) -> CardReading:
         t0 = time.time()
         try:
-            text = self.read_text(image_bgr)
+            r = self.read(image_bgr)
         except RuntimeError as e:  # load failure: say so, never pose as "no card"
-            return CardReading.unreadable(f"hailo-ocr error: {e}", self.name, time.time() - t0)
+            return CardReading.failure(f"hailo-ocr error: {e}", self.name, time.time() - t0)
         dt = time.time() - t0
-        if not text.strip():
-            return CardReading.unreadable("hailo-ocr: no confident text", self.name, dt)
-        return CardReading(readable=True, code=text, backend=self.name, latency_s=dt)
+        min_chars, min_conf = ABSTAIN_BELOW
+        if r.chars < min_chars or r.confidence < min_conf or not r.text.strip():
+            return CardReading.unreadable(
+                f"hailo-ocr: not confident ({r.chars} chars, {r.confidence:.2f})", self.name, dt)
+        return CardReading(readable=True, code=r.text, backend=self.name, latency_s=dt)

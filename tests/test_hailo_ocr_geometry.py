@@ -6,7 +6,20 @@ import pytest
 cv2 = pytest.importorskip("cv2")
 np = pytest.importorskip("numpy")
 
-from vision.backends.hailo_ocr import _line_axis, _upright  # noqa: E402
+from vision.backends.hailo_ocr import _class_probs, _line_axis, _upright  # noqa: E402
+
+
+def test_class_probs_softmaxes_logits_over_every_class():
+    logits = np.array([[0.0, 2.0, 2.0], [10.0, 0.0, 0.0]])
+    p = _class_probs(logits)
+    assert np.allclose(p.sum(axis=1), 1.0)
+    assert np.isclose(p[0, 1], p[0, 2]) and p[0, 1] < 0.5  # a tie is not confident
+    assert p[1, 0] > 0.99
+
+
+def test_class_probs_leaves_probabilities_alone():
+    probs = np.array([[0.1, 0.7, 0.2], [0.5, 0.25, 0.25]])
+    assert np.array_equal(_class_probs(probs), probs)
 
 
 def _line_image(tilt_deg: float) -> np.ndarray:

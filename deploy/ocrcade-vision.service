@@ -8,6 +8,8 @@ Type=simple
 User=sakebomb
 WorkingDirectory=/home/sakebomb/ocrcade
 EnvironmentFile=-/home/sakebomb/ocrcade/.env
+# LiteLLM URL + key for the cloud code reader (root-only file, never in git)
+EnvironmentFile=-/etc/ocrcade/litellm.env
 ExecStart=/usr/bin/python3 /home/sakebomb/ocrcade/daemon.py
 Restart=on-failure
 RestartSec=3

@@ -1,8 +1,13 @@
 # OCRcade v2 configuration. Single source of truth for endpoints + thresholds.
 vlm:
-  primary: ollama          # the code reader
+  # Code readers, tried in order: one that is unreachable or breaks falls through to
+  # the next; one that looks and declines (bad frame) is final. Names: ollama, hailo_ocr.
+  # litellm (grok-fast, ~0.8 s, photos leave the Pi) first; hailo_ocr (on the Pi, ~0.5 s)
+  # answers when LiteLLM is down, slow (> timeout_s), rate-limited or over budget.
+  code_readers: [litellm, hailo_ocr]
+  primary: ollama          # whole-card read_card only (tools/phase1_smoke.py)
   fallback: hailo          # coarse: puzzle-number + camera-challenge routing only (NOT a code reader)
-  on_unreachable: degrade  # degrade = run camera challenges + routing; code puzzles need the GPU link
+  on_unreachable: degrade  # degrade = run camera challenges + routing
 
   ollama:
     url: "http://10.0.9.150:11434"   # Jupiter / 4090
@@ -14,6 +19,12 @@ vlm:
   hailo:
     hef: "/home/sakebomb/Qwen2-VL-2B-Instruct.hef"  # 336x336 input; coarse only
     max_tokens: 64
+
+  litellm:     # homelab LiteLLM over Tailscale; URL + key from /etc/ocrcade/litellm.env
+    model: "grok-fast"          # grok-4.20 non-reasoning, flat-rate subscription, no fallback
+    url_env: LITELLM_URL
+    key_env: LITELLM_API_KEY
+    timeout_s: 10               # past this, fall through to hailo_ocr (~0.5 s)
 
   hailo_ocr:   # PaddleOCR on the Hailo: reads code (eval reader `hailo-ocr`; tools/fetch_hailo_ocr.sh)
     det_hef: "/home/sakebomb/hailo-models/paddle_ocr_v5_mobile_detection.hef"

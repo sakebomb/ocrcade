@@ -60,6 +60,7 @@ there, so it is scored on the same set as everything before it.
 |--------|-----------|
 | `hailo-ocr` | PaddleOCR on the Hailo-10H: text detection, then each line recognized and laid back out with spaces and indentation (`vision/backends/hailo_ocr.py`). Models: `tools/fetch_hailo_ocr.sh`. |
 | `hailo-whole` | Qwen2-VL-2B on the Hailo-10H, whole frame at 336×336. The baseline. |
+| `litellm` | A cloud vision model through the homelab LiteLLM proxy over Tailscale (`vlm.litellm.model`). Needs `/etc/ocrcade/litellm.env`, so run the eval as root with that file loaded. Photos leave the Pi. |
 | `ollama` | The production Qwen2.5-VL-7B on a network GPU, when one is reachable. |
 
 Each run prints a line per sample and a summary, and writes every read and score to
@@ -117,6 +118,36 @@ How the pieces were chosen, all scored on this set:
 | + indent measured on the ink, not the merged blob; space restored where a long crop is cut (shipped) | **0.072** |
 | PP-OCRv6 small or medium detector instead of v5 mobile | 0.15 |
 
-Each frame is read in all four rotations and the most confident one wins, which is
-why a sideways page reads. That is most of the latency; reading upright first and
-rotating only when that read is weak would cut it.
+The v6 recognizers output logits, not probabilities. Until they were put through a
+softmax, the line confidence floor (0.6) never dropped anything, so the v6 rows above
+were measured with no floor. With real probabilities the floor barely moves the score
+(0.068–0.076 for floors 0.5–0.8).
+
+**2026-11-03, rotation and abstention, tuned on all 479 logged event frames.** A frame
+is read upright first. If that read has at least 20 characters at mean confidence 0.85
+or more, the other rotations are skipped; that holds for 295 of the 479 frames. The
+median read drops from 1.33 s to 0.46 s, with CER unchanged (0.073). The reader
+declines a frame with fewer than 15 characters or confidence below 0.70. On the logged
+frames that declines 129 of 479: empty scenes, a lone `A`, `16.4`, and some confident
+garbage at 0.64. None of the 20 labelled cards are declined; the weakest reads 37
+characters at 0.90.
+
+**2026-11-03, `event-2026-04`, `litellm` with `grok-sub` (Grok 4.7).** On the 13 frames
+that answered within 30 s: mean CER **0.009**, 9 of 13 exact. The other 7 timed out,
+and the median read took 14 s. Grok reasons before it answers, and on one frame that
+took 8.5 to 68 s across runs (650 to 4,700 reasoning tokens). `reasoning_effort: low`
+did not reliably help. It reads far better than anything on the Pi, but players cannot
+wait that long.
+
+**2026-11-03, `event-2026-04`, `litellm` with `grok-fast` (Grok 4.20, non-reasoning).**
+Mean CER **0.054**, exact **15/20**, no errors, 0.78 s per read (1.5 s max). This is
+now first in `vlm.code_readers`, with `hailo_ocr` behind it. Almost all of its error
+comes from two screen frames:
+
+- On `184953` it returned only the code and left out the old-format
+  `Puzzle:/Team:/Lang:` header. That header is part of the truth for this set, but
+  today's cards carry it on the ArUco marker, so the miss does not matter in play.
+- On `190829` it put a space inside the puzzle 3 move string. That would fail the maze.
+
+`claude-sonnet-5-5` on the same key is not scored yet: its first requests came back
+HTTP 400 from Anthropic, then the key's 30-requests-per-minute limit cut the run short.

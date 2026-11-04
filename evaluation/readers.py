@@ -57,25 +57,19 @@ class HailoWholeFrame:
         return ReadResult(code, reason, time.perf_counter() - t0)
 
 
-class HailoOCR:
-    """PaddleOCR text detection + recognition on the Hailo-10H, with lines, spaces and
-    indentation rebuilt from box positions (vision/backends/hailo_ocr.py)."""
+class BackendCode:
+    """Any production code-reader backend, scored exactly as the game would use it.
+    A backend failure (unreachable, refused, garbled) is an error, not an abstention."""
 
-    name = "hailo-ocr"
-
-    def __init__(self, cfg: dict):
-        from vision.backends.hailo_ocr import HailoOCRBackend
-
-        self._backend = HailoOCRBackend(det_hef=cfg["det_hef"], rec_hef=cfg["rec_hef"],
-                                        keys=cfg["keys"], min_conf=cfg.get("min_conf", 0.6))
+    def __init__(self, name: str, backend):
+        self.name, self._backend = name, backend
 
     def read(self, image_bgr) -> ReadResult:
-        t0 = time.perf_counter()
-        text = self._backend.read_text(image_bgr)  # raises if the models failed to load
-        dt = time.perf_counter() - t0
-        if not text.strip():
-            return ReadResult(None, "no confident text", dt)
-        return ReadResult(text, "", dt)
+        r = self._backend.read_code(image_bgr)
+        if r.failed:
+            raise RuntimeError(f"{self.name}: {r.reason}")
+        return ReadResult(r.code if r.readable else None, "" if r.readable else r.reason,
+                          r.latency_s)
 
 
 class OllamaCode:
@@ -97,13 +91,15 @@ class OllamaCode:
                           r.latency_s)
 
 
-READERS = ("hailo-ocr", "hailo-whole", "ollama")
+READERS = ("hailo-ocr", "hailo-whole", "litellm", "ollama")
 
 
 def make_reader(name: str, vlm_cfg: dict) -> Reader:
     """Build a reader from its name and the config's `vlm:` block."""
-    if name == "hailo-ocr":
-        return HailoOCR(vlm_cfg["hailo_ocr"])
+    if name in ("litellm", "hailo-ocr"):
+        from vision.vlm_client import CODE_READERS
+
+        return BackendCode(name, CODE_READERS[name.replace("-", "_")](vlm_cfg))
     if name == "hailo-whole":
         return HailoWholeFrame(hef=vlm_cfg["hailo"]["hef"])
     if name == "ollama":
