@@ -25,6 +25,7 @@ from game.output_validator import set_level4_maze, validate
 from game.rtb_submitter import is_solved
 from game.rtb_submitter import submit as rtb_submit
 from game.sandbox_runner import run as sandbox_run
+from game.sandbox_runner import run_cgroup as sandbox_cgroup
 from vision import load_config
 
 ROOT        = Path(__file__).resolve().parent
@@ -207,7 +208,9 @@ def maze_preview():
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"}), 200
+    cg = sandbox_cgroup()
+    return jsonify({"status": "ok", "sandbox_memory_cap": cg.memory_capped,
+                    "sandbox_cgroup": cg.status}), 200
 
 
 # ── Submission pipeline ──────────────────────────────────────────────────────
@@ -266,6 +269,12 @@ def _run_submission(puzzle: int, team: str, lang: str, code: str) -> None:
 
         display.received(team, puzzle)
         result = sandbox_run(puzzle, lang, code)
+        if result["busy"]:
+            display.failure(team, "BUSY – another team's code is running, show it again")
+            return
+        if result["oom"]:
+            display.failure(team, "MEMORY LIMIT EXCEEDED – Your code used over 1 GB")
+            return
         if result["timed_out"]:
             display.failure(team, "TIME LIMIT EXCEEDED – Your code took too long")
             return
@@ -290,6 +299,8 @@ def _run_submission(puzzle: int, team: str, lang: str, code: str) -> None:
 def main() -> None:
     cfg = load_config()["server"]
     _init_level4_maze()
+    # Before any thread starts: the cgroup setup moves this process into server/.
+    log.info(f"sandbox: {sandbox_cgroup().status}")
     display.attract()
     app.run(host=cfg.get("host", "0.0.0.0"), port=cfg.get("port", 5000), threaded=True)
 

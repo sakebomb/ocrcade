@@ -13,8 +13,13 @@ Hardening (see SECURITY review):
   unlike subprocess preexec_fn in a threaded server.)
 - C++ is compiled INSIDE the sandbox too, so malicious source can't #include host
   files as a read-oracle.
+- One run at a time (a busy slot is reported, not queued), and every command starts
+  inside a cgroup capping the whole run: 1 GB of memory, no swap, 64 processes
+  (game/sandbox_cgroup.py). The per-process ulimits alone would let 64 processes take
+  64 GB between them.
 
-Returns: {'stdout': str, 'stderr': str, 'exit_code': int, 'timed_out': bool}
+Returns: {'stdout': str, 'stderr': str, 'exit_code': int, 'timed_out': bool,
+          'busy': bool, 'oom': bool}
 """
 
 import logging
@@ -22,12 +27,18 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
+
+from game.sandbox_cgroup import RunCgroup
 
 log = logging.getLogger('ocrcade.sandbox')
 
 TIMEOUT         = 15   # wall-clock seconds for player code
 COMPILE_TIMEOUT = 30   # wall-clock seconds for the C++ compile
+SLOT_WAIT       = 5    # seconds a submission waits for the one run slot
+MEMORY_MAX      = 1024 ** 3   # bytes, all of one run's processes together
+PIDS_MAX        = 64
 BWRAP           = '/usr/bin/bwrap'
 PUZZLES_DIR     = Path(__file__).resolve().parent.parent / 'puzzles'
 
@@ -46,17 +57,63 @@ def _puzzle_data_dir(puzzle: int) -> Path:
     return PUZZLES_DIR / f'level{puzzle}'
 
 
+_slot = threading.Lock()
+_cgroup: RunCgroup | None = None
+_cgroup_lock = threading.Lock()
+
+
+def run_cgroup() -> RunCgroup:
+    """The run cgroup, set up on first use (the server also calls this at startup so
+    /health and the log report the cap before the first submission)."""
+    global _cgroup
+    with _cgroup_lock:
+        if _cgroup is None:
+            try:
+                _cgroup = RunCgroup.for_this_process(MEMORY_MAX, PIDS_MAX)
+            except OSError as e:  # no /proc/self/cgroup (not Linux)
+                log.warning(f"sandbox cgroup unavailable: {e}")
+                _cgroup = RunCgroup(Path('/nonexistent'), MEMORY_MAX, PIDS_MAX)
+            _cgroup.setup()
+        return _cgroup
+
+
 def run(puzzle: int, lang: str, code: str) -> dict:
     """Write code to a temp dir, execute in a bwrap sandbox, return result dict."""
+    if not _slot.acquire(timeout=SLOT_WAIT):
+        log.warning("sandbox busy: another run holds the slot")
+        return _result(stderr='BUSY', exit_code=-1, busy=True)
     workdir = tempfile.mkdtemp(prefix='ocrcade_')
     try:
         return _execute(puzzle, lang, code, workdir)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+        _slot.release()
+
+
+def _result(stdout: str = '', stderr: str = '', exit_code: int = 0, timed_out: bool = False,
+            busy: bool = False, oom: bool = False) -> dict:
+    return {'stdout': stdout, 'stderr': stderr, 'exit_code': exit_code,
+            'timed_out': timed_out, 'busy': busy, 'oom': oom}
 
 
 def _err(stderr: str, exit_code: int = 1) -> dict:
-    return {'stdout': '', 'stderr': stderr, 'exit_code': exit_code, 'timed_out': False}
+    return _result(stderr=stderr, exit_code=exit_code)
+
+
+def _confined(cmd: list, timeout: float, cwd: str | None = None):
+    """Run a sandbox command inside the run cgroup. Returns (proc or None on timeout,
+    whether the run hit the memory cap). Leftover processes are killed either way."""
+    cg = run_cgroup()
+    cg.start()
+    proc = None
+    try:
+        proc = subprocess.run(cg.wrap(cmd), capture_output=True, text=True, timeout=timeout,
+                              stdin=subprocess.DEVNULL, cwd=cwd)
+    except subprocess.TimeoutExpired:
+        pass
+    finally:
+        oom = cg.finish()
+    return proc, oom
 
 
 def _execute(puzzle: int, lang: str, code: str, workdir: str) -> dict:
@@ -81,12 +138,12 @@ def _execute(puzzle: int, lang: str, code: str, workdir: str) -> dict:
         compile_cmd = _build_cmd(
             ['g++', '-O2', '-o', '/sandbox/solution', '/sandbox/solution.cpp'],
             workdir, data_dir=None)
-        try:
-            cr = subprocess.run(compile_cmd, capture_output=True, text=True,
-                                timeout=COMPILE_TIMEOUT, stdin=subprocess.DEVNULL)
-        except subprocess.TimeoutExpired:
-            return {'stdout': '', 'stderr': 'COMPILE TIME LIMIT EXCEEDED',
-                    'exit_code': -1, 'timed_out': True}
+        cr, oom = _confined(compile_cmd, COMPILE_TIMEOUT)
+        if oom:
+            return _result(stderr='COMPILE MEMORY LIMIT EXCEEDED', exit_code=-1, oom=True)
+        if cr is None:
+            return _result(stderr='COMPILE TIME LIMIT EXCEEDED', exit_code=-1,
+                           timed_out=True)
         if cr.returncode != 0:
             return _err(f'COMPILE ERROR:\n{cr.stderr}', cr.returncode)
         cmd = _build_cmd(['/sandbox/solution'], workdir, data_dir)
@@ -95,15 +152,16 @@ def _execute(puzzle: int, lang: str, code: str, workdir: str) -> dict:
         return _err(f'Unsupported language: {lang}')
 
     log.info(f"Executing puzzle={puzzle} lang={lang}")
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT,
-                              stdin=subprocess.DEVNULL, cwd=workdir)
-        return {'stdout': proc.stdout, 'stderr': proc.stderr,
-                'exit_code': proc.returncode, 'timed_out': False}
-    except subprocess.TimeoutExpired:
+    proc, oom = _confined(cmd, TIMEOUT, cwd=workdir)
+    if oom:
+        log.warning(f"Run hit the {MEMORY_MAX // 1024 ** 2} MB memory cap")
+        return _result(stdout=proc.stdout if proc else '', stderr='MEMORY LIMIT EXCEEDED',
+                       exit_code=proc.returncode if proc else -1, oom=True)
+    if proc is None:
         log.warning(f"Execution timed out after {TIMEOUT}s")
-        return {'stdout': '', 'stderr': f'TIME LIMIT EXCEEDED ({TIMEOUT}s)',
-                'exit_code': -1, 'timed_out': True}
+        return _result(stderr=f'TIME LIMIT EXCEEDED ({TIMEOUT}s)', exit_code=-1,
+                       timed_out=True)
+    return _result(stdout=proc.stdout, stderr=proc.stderr, exit_code=proc.returncode)
 
 
 def _build_cmd(inner_cmd: list, workdir: str, data_dir: Path | None) -> list:
