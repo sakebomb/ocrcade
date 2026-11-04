@@ -66,9 +66,10 @@ def _release(team: str, puzzle: int) -> None:
     with _inflight_lock:
         _inflight.discard((team.strip().lower(), puzzle))
 
-# Shared secret for the internal display/control endpoints (daemon + mini-games are
-# the legitimate callers). UNSET → auth disabled (logged), so existing deploys keep
-# working; set OCRCADE_OPERATOR_TOKEN in the env on both server and daemon to enforce.
+# Shared secret for every POST endpoint: /submit and the display/control endpoints
+# (daemon + mini-games are the legitimate callers). UNSET → auth disabled (logged), so
+# existing deploys keep working; set OCRCADE_OPERATOR_TOKEN in the env on both server
+# and daemon to enforce.
 OPERATOR_TOKEN = os.environ.get("OCRCADE_OPERATOR_TOKEN", "")
 
 log = logging.getLogger("ocrcade.server")
@@ -117,6 +118,7 @@ def _init_level4_maze() -> None:
 # ── HTTP endpoints ───────────────────────────────────────────────────────────
 
 @app.route("/submit", methods=["POST"])
+@require_operator  # runs player code; the daemon is the only caller and sends the token
 def submit():
     data = request.get_json(force=True)
     puzzle = data.get("puzzle")

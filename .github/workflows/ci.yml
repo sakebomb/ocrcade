@@ -13,8 +13,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install tooling
-        run: pip install ruff pytest
+      - name: Install tooling and runtime deps
+        # The tests import the runtime deps (Flask, numpy, OpenCV); without them most
+        # test files skip. The Pi-only libraries are not in requirements.txt.
+        run: pip install ruff pytest -r requirements.txt
       - name: Ruff lint
         run: ruff check .
       - name: Byte-compile (catches syntax errors)
