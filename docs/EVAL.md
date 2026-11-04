@@ -50,7 +50,7 @@ today's sandbox does not provide, so **on this set use `mean_cer` and `exact_rat
 ## 2. Score a reader
 
 ```bash
-python3 tools/eval_reader.py ~/ocrcade-eval/handwriting --reader hailo-whole --run
+python3 tools/eval_reader.py ~/ocrcade-eval/handwriting --reader hailo-ocr --run
 ```
 
 Readers are defined in `evaluation/readers.py`. A new reading strategy is a new reader
@@ -58,6 +58,7 @@ there, so it is scored on the same set as everything before it.
 
 | Reader | What it is |
 |--------|-----------|
+| `hailo-ocr` | PaddleOCR on the Hailo-10H: text detection, then each line recognized and laid back out with spaces and indentation (`vision/backends/hailo_ocr.py`). Models: `tools/fetch_hailo_ocr.sh`. |
 | `hailo-whole` | Qwen2-VL-2B on the Hailo-10H, whole frame at 336×336. The baseline. |
 | `ollama` | The production Qwen2.5-VL-7B on a network GPU, when one is reachable. |
 
@@ -92,6 +93,30 @@ every one with invented text (a CER above 1.0 means more wrong characters than t
 has). It is not usable as a code reader, and its confident wrong answers are the dangerous
 kind.
 
-The Hailo model zoo's PaddleOCR line recognizer (`paddle_ocr_v6_small_recognition`, built
-for the Hailo-10H) loads on kepler's HailoRT 5.1.1 and runs at 188 lines per second. It is
-the next reader to build and score.
+**2026-11-03, `event-2026-04`, `hailo-ocr`.** Mean CER **0.072**, exact **0/20**,
+abstained **0/20**, 1.25 s per read (1.8 s max), all on the Hailo. That is about 15×
+fewer character errors than `hailo-whole`. 19 of the 20 frames score below 0.14,
+handwritten ones included. The remaining errors:
+
+- Small misreads in handwriting, such as `megad00mer` read as `megad100mer`.
+- Missing punctuation: a dropped `:` or space.
+- A stray mark read as an extra line (`HM`, frame `145404`).
+- Two header lines merged on one slanted page (`152321`, CER 0.19, the worst frame).
+
+Puzzle 2's indentation comes back right.
+
+How the pieces were chosen, all scored on this set:
+
+| Change | Mean CER |
+|--------|----------|
+| Hailo's English recognizer (97 classes), lines split into words, but crops randomly flipped | 1.65 |
+| + crops kept reading left to right | 0.68 |
+| + boxes grouped into lines, low-confidence (< 0.6) lines dropped, implausibly deep indents reset to 0 | 0.23 |
+| PP-OCRv6 small recognizer, output masked to printable ASCII | 0.10 |
+| PP-OCRv6 medium recognizer | 0.086 |
+| + indent measured on the ink, not the merged blob; space restored where a long crop is cut (shipped) | **0.072** |
+| PP-OCRv6 small or medium detector instead of v5 mobile | 0.15 |
+
+Each frame is read in all four rotations and the most confident one wins, which is
+why a sideways page reads. That is most of the latency; reading upright first and
+rotating only when that read is weak would cut it.
