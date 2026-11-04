@@ -15,7 +15,7 @@ import numpy as np
 import requests
 
 from ..prompts import READ_CARD_PROMPT, READ_CODE_PROMPT
-from ..schema import SUPPORTED_LANGS, CardReading
+from ..schema import SUPPORTED_LANGS, CardReading, code_reading_from_json
 
 log = logging.getLogger("ocrcade.vlm.ollama")
 
@@ -79,14 +79,8 @@ class OllamaVLMBackend:
         marker, team from a `# team:` line in the returned code)."""
         resp, err, dt = self._generate(READ_CODE_PROMPT, image_bgr)
         if resp is None:
-            return CardReading.unreadable(err, self.name, dt)
-        try:
-            d = json.loads(resp)
-        except json.JSONDecodeError:
-            return CardReading.unreadable(f"non-JSON: {resp[:120]}", self.name, dt)
-        if not d.get("readable", False):
-            return CardReading.unreadable(d.get("reason", "model abstained"), self.name, dt)
-        return CardReading(readable=True, code=d.get("code"), backend=self.name, latency_s=dt)
+            return CardReading.failure(err, self.name, dt)
+        return code_reading_from_json(resp, self.name, dt)
 
     def _parse(self, resp: str, dt: float) -> CardReading:
         try:
