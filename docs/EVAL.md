@@ -93,15 +93,15 @@ every one with invented text (a CER above 1.0 means more wrong characters than t
 has). It is not usable as a code reader, and its confident wrong answers are the dangerous
 kind.
 
-**2026-11-03, `event-2026-04`, `hailo-ocr`.** Mean CER **0.086**, exact **0/20**,
-abstained **0/20**, 1.2 s per read (1.7 s max), all on the Hailo. That is 13× fewer
-character errors than `hailo-whole`. 18 of the 20 frames score below 0.14, handwritten
-ones included. The remaining errors:
+**2026-11-03, `event-2026-04`, `hailo-ocr`.** Mean CER **0.072**, exact **0/20**,
+abstained **0/20**, 1.25 s per read (1.8 s max), all on the Hailo. That is about 15×
+fewer character errors than `hailo-whole`. 19 of the 20 frames score below 0.14,
+handwritten ones included. The remaining errors:
 
-- Small misreads in handwriting, such as `megad100mer` and `+x+` for `txt`.
+- Small misreads in handwriting, such as `megad00mer` read as `megad100mer`.
 - Missing punctuation: a dropped `:` or space.
-- A stray mark read as an extra line (`HM`, frame `145404`, CER 0.41).
-- Two header lines merged on one slanted page (`152321`, CER 0.20).
+- A stray mark read as an extra line (`HM`, frame `145404`).
+- Two header lines merged on one slanted page (`152321`, CER 0.19, the worst frame).
 
 Puzzle 2's indentation comes back right.
 
@@ -111,9 +111,10 @@ How the pieces were chosen, all scored on this set:
 |--------|----------|
 | Hailo's English recognizer (97 classes), lines split into words, but crops randomly flipped | 1.65 |
 | + crops kept reading left to right | 0.68 |
-| + boxes grouped into lines, low-confidence (< 0.6) lines dropped, indent capped | 0.23 |
+| + boxes grouped into lines, low-confidence (< 0.6) lines dropped, implausibly deep indents reset to 0 | 0.23 |
 | PP-OCRv6 small recognizer, output masked to printable ASCII | 0.10 |
-| PP-OCRv6 **medium** recognizer (shipped) | **0.086** |
+| PP-OCRv6 medium recognizer | 0.086 |
+| + indent measured on the ink, not the merged blob; space restored where a long crop is cut (shipped) | **0.072** |
 | PP-OCRv6 small or medium detector instead of v5 mobile | 0.15 |
 
 Each frame is read in all four rotations and the most confident one wins, which is

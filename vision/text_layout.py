@@ -56,6 +56,27 @@ def ctc_decode(indices: Sequence[int], confs: Sequence[float], charset: Sequence
     return "".join(chars), kept
 
 
+def parse_keys(text: str, classes: int) -> list[str]:
+    """A recognizer key file, one class per line, checked against the model's class
+    count. A key file off by one would shift every character, so any mismatch is an
+    error. One trailing newline is allowed; a space key line is kept as a space."""
+    if text.endswith("\n"):
+        text = text[:-1]
+    keys = text.split("\n")
+    if len(keys) != classes:
+        raise ValueError(f"key file has {len(keys)} classes, the model has {classes}")
+    return keys
+
+
+def join_pieces(texts: Sequence[str], cut_is_blank: Sequence[bool]) -> str:
+    """Rejoin the pieces of a crop that was cut to fit the recognizer. A cut that fell
+    on a blank column was a space the recognizer never saw, so it becomes one."""
+    out = texts[0] if texts else ""
+    for t, blank in zip(texts[1:], cut_is_blank, strict=True):
+        out += (" " if blank and out and t else "") + t
+    return out
+
+
 def ascii_allowed(charset: Sequence[str]) -> list[bool]:
     """Which classes code may contain: the blank (index 0) and single printable ASCII
     characters. Masks a multilingual recognizer down to what a card can hold."""

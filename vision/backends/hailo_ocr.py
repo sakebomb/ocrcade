@@ -21,7 +21,17 @@ import cv2
 import numpy as np
 
 from ..schema import CardReading
-from ..text_layout import Segment, ascii_allowed, assemble, ctc_decode, gap_cuts, long_cuts
+from ..text_layout import (
+    INK_EMPTY,
+    Segment,
+    ascii_allowed,
+    assemble,
+    ctc_decode,
+    gap_cuts,
+    join_pieces,
+    long_cuts,
+    parse_keys,
+)
 
 log = logging.getLogger("ocrcade.ocr.hailo")
 
@@ -32,7 +42,8 @@ LINE_MEAN_MIN = 0.4         # a blob's mean heat must reach this to be a text li
 LINE_MIN_AREA = 40          # detector pixels; smaller blobs are specks
 LINE_MERGE = 1.2            # sideways smear, in median text heights
 WORD_GAP = 0.5              # a blank run this many line heights wide splits words
-PIECE_ASPECT = 6.0          # longest crop sent to the recognizer, width / height
+PIECE_ASPECT = 5.5          # target piece width / height; a cut may shift half a height,
+                            # which must still fit the recognizer's 320/48 = 6.67
 PAD_Y, PAD_X = 0.35, 0.1    # crop padding, in line heights
 ROTATIONS = (0, 90, 180, 270)
 _ROTATE = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
@@ -100,20 +111,26 @@ class HailoOCRBackend:
         self._models: dict = {}
         self._charset: list[str] = []
         self._allow = None
+        self._load_error: str | None = None
 
     # -- device ------------------------------------------------------------------------
     def _ensure_loaded(self) -> bool:
+        """Load once. A failed load is remembered (and reported by read_text) instead of
+        being retried on every frame."""
         if self._models:
             return True
+        if self._load_error is not None:
+            return False
         try:
             from hailo_platform import FormatType, HailoSchedulingAlgorithm, VDevice
         except ImportError as e:
-            log.warning(f"hailo_platform unavailable (not on kepler?): {e}")
+            self._load_error = f"hailo_platform unavailable (not on kepler?): {e}"
+            log.warning(self._load_error)
             return False
         try:
             t0 = time.time()
-            with open(self.keys, encoding="utf-8") as f:
-                self._charset = f.read().split("\n")
+            with open(self.keys, encoding="utf-8", newline="") as f:
+                keys_text = f.read()
             params = VDevice.create_params()
             params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
             self._vdevice = VDevice(params)
@@ -122,16 +139,16 @@ class HailoOCRBackend:
                 model.set_batch_size(1)
                 model.output().set_format_type(FormatType.FLOAT32)
                 ctx = model.configure()
+                self._models[role] = (model, ctx, None)  # release() can close it from here
                 self._models[role] = (model, ctx, ctx.__enter__())
             classes = self._models["rec"][0].output().shape[-1]
-            self._charset = self._charset[:classes]
-            if len(self._charset) != classes:
-                raise ValueError(f"{self.keys}: {len(self._charset)} keys, model has {classes}")
+            self._charset = parse_keys(keys_text, classes)
             self._allow = np.array(ascii_allowed(self._charset))
             log.info(f"Hailo OCR loaded in {time.time()-t0:.1f}s ({classes} classes)")
             return True
         except Exception as e:
-            log.error(f"Hailo OCR load failed: {e}")
+            self._load_error = f"Hailo OCR load failed: {e}"
+            log.error(self._load_error)
             self.release()
             return False
 
@@ -176,11 +193,12 @@ class HailoOCRBackend:
             word = crop[:, x0:x1]
             word_ink = np.interp(np.linspace(e0, e1 - 1, x1 - x0), np.arange(len(ink)), ink)
             cuts = long_cuts(word_ink.tolist(), word.shape[0], PIECE_ASPECT)
-            text = ""
+            pieces = []
             for c0, c1 in zip([0, *cuts], [*cuts, word.shape[1]], strict=True):
                 t, cs = self._recognize(word[:, c0:c1])
-                text += t
+                pieces.append(t)
                 confs += cs
+            text = join_pieces(pieces, [word_ink[c] < INK_EMPTY for c in cuts])
             if text:
                 words.append(text)
         return words, confs
@@ -215,16 +233,19 @@ class HailoOCRBackend:
             words, confs = self._read_pieces(crop, ink, line_h)
             if not words or float(np.mean(confs)) < self.min_conf:
                 continue
-            segments.append(Segment(top=y, bottom=y + h, left=x, right=x + w,
-                                    text=" ".join(words)))
+            # Box the text itself, not the sideways-smeared blob, so character widths
+            # (and so indentation) are measured on real ink.
+            cols = np.flatnonzero(inside.any(axis=0))
+            segments.append(Segment(top=y, bottom=y + h, left=x + int(cols[0]),
+                                    right=x + int(cols[-1]) + 1, text=" ".join(words)))
             score += float(np.sum(confs))
         return segments, score
 
-    def read_text(self, image_bgr: np.ndarray) -> str | None:
-        """The code in the frame, laid out as lines, or None if the model is not loaded.
-        An empty string means no confident text was found."""
+    def read_text(self, image_bgr: np.ndarray) -> str:
+        """The code in the frame, laid out as lines. An empty string means no confident
+        text was found. Raises RuntimeError if the models could not be loaded."""
         if not self._ensure_loaded():
-            return None
+            raise RuntimeError(self._load_error or "Hailo OCR models are not loaded")
         rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         best: tuple[list[Segment], float] = ([], 0.0)
         for rot in self.rotations:
@@ -236,10 +257,11 @@ class HailoOCRBackend:
 
     def read_code(self, image_bgr: np.ndarray) -> CardReading:
         t0 = time.time()
-        text = self.read_text(image_bgr)
+        try:
+            text = self.read_text(image_bgr)
+        except RuntimeError as e:  # load failure: say so, never pose as "no card"
+            return CardReading.unreadable(f"hailo-ocr error: {e}", self.name, time.time() - t0)
         dt = time.time() - t0
-        if text is None:
-            return CardReading.unreadable("hailo-ocr: model not loaded", self.name, dt)
         if not text.strip():
             return CardReading.unreadable("hailo-ocr: no confident text", self.name, dt)
         return CardReading(readable=True, code=text, backend=self.name, latency_s=dt)

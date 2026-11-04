@@ -71,9 +71,7 @@ class HailoOCR:
 
     def read(self, image_bgr) -> ReadResult:
         t0 = time.perf_counter()
-        text = self._backend.read_text(image_bgr)
-        if text is None:
-            raise RuntimeError("Hailo OCR models are not loaded")
+        text = self._backend.read_text(image_bgr)  # raises if the models failed to load
         dt = time.perf_counter() - t0
         if not text.strip():
             return ReadResult(None, "no confident text", dt)

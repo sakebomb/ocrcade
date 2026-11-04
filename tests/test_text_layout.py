@@ -9,7 +9,9 @@ from vision.text_layout import (
     ctc_decode,
     gap_cuts,
     group_lines,
+    join_pieces,
     long_cuts,
+    parse_keys,
 )
 
 CHARSET = ["blank", "a", "b", "c", " "]
@@ -35,6 +37,29 @@ def test_ctc_decode_strips_edge_spaces_but_keeps_inner_ones():
 def test_ascii_allowed_keeps_blank_and_printable_ascii_only():
     assert ascii_allowed(["blank", "a", "~", "中", "\t", "ab", " "]) == [
         True, True, True, False, False, False, True]
+
+
+def test_parse_keys_accepts_one_trailing_newline_and_keeps_a_space_key():
+    assert parse_keys("blank\na\n \n", 3) == ["blank", "a", " "]
+
+
+def test_parse_keys_rejects_a_file_one_key_short():
+    with pytest.raises(ValueError, match="2 classes"):
+        parse_keys("blank\na\n", 3)
+
+
+def test_parse_keys_rejects_a_file_one_key_long():
+    with pytest.raises(ValueError, match="4 classes"):
+        parse_keys("blank\na\nb\nc", 3)
+
+
+def test_join_pieces_restores_a_space_only_where_the_cut_was_blank():
+    assert join_pieces(["self.value", "+", "other"], [True, False]) == "self.value +other"
+
+
+def test_join_pieces_skips_empty_pieces_without_doubling_spaces():
+    assert join_pieces(["ab", "", "cd"], [True, True]) == "ab cd"
+    assert join_pieces([], []) == ""
 
 
 def test_gap_cuts_splits_only_at_interior_gaps_at_least_min_wide():
