@@ -71,6 +71,7 @@ def test_setup_fails_soft_when_the_cgroup_is_not_delegated(tmp_path):
         assert not cg.setup()
         assert cg.wrap(["python3", "x.py"]) == ["python3", "x.py"]
         assert "not delegated" in cg.status
+        assert not (root / "server").exists()  # failed before moving any process
     finally:
         (root / "cgroup.subtree_control").chmod(0o644)
 
@@ -98,6 +99,9 @@ def test_finish_kills_leftovers_and_reports_a_new_oom_kill(tmp_path):
     assert (root / "run" / "cgroup.kill").read_text() == "1"
     cg.start()
     assert cg.finish() is False  # same count as before this run: no new kill
+    cg.start()
+    (root / "run" / "memory.events").write_text("oom 5\noom_kill 1\n")
+    assert cg.finish() is False  # the limit was hit but nothing was killed
 
 
 @pytest.mark.parametrize("bad", [0, -5])
