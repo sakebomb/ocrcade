@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from evaluation.solutions import PUZZLES, reference
-from game.output_validator import _extract_path, _validate_maze_path
+from game.output_validator import _extract_path, _validate_maze_path, validate
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -28,15 +28,21 @@ def test_every_reference_names_a_team():
         assert reference(p).startswith("# team: ")
 
 
+def test_puzzle0_reference_passes_the_validator(tmp_path):
+    ok, _ = validate(0, _run(reference(0), tmp_path))
+    assert ok
+
+
 def test_puzzle1_reference_prints_the_flag_file(tmp_path):
+    # The real flag file is event data and not in git, so a stand-in takes its place.
     (tmp_path / "flag1.txt").write_text("FLAG{test}\n")
     assert "FLAG{test}" in _run(reference(1), tmp_path)
 
 
-def test_puzzle2_reference_prints_the_expected_sum():
-    level2 = ROOT / "puzzles" / "level2"
-    expected = (level2 / "expected.txt").read_text().strip()
-    assert _run(reference(2), level2).strip() == expected
+def test_puzzle2_reference_passes_the_validator(monkeypatch):
+    monkeypatch.setattr("game.output_validator._read_flag", lambda n: f"flag{n}")
+    ok, _ = validate(2, _run(reference(2), ROOT / "puzzles" / "level2"))
+    assert ok
 
 
 def test_puzzle3_reference_walks_the_fixed_maze():

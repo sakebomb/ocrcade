@@ -44,14 +44,15 @@ there, so it is scored on the same set as everything before it.
 | `ollama` | The production Qwen2.5-VL-7B on a network GPU, when one is reachable. |
 
 Each run prints a line per sample and a summary, and writes every read and score to
-`<set>/results/<reader>-<timestamp>.json`.
+`<set>/results/<reader>-<timestamp>.json`. A sample whose image or reader call fails is
+recorded as an error and counted under `errors`, not as an abstention, and the run goes on.
 
 ## 3. What the numbers mean
 
 | Metric | Meaning |
 |--------|---------|
-| `pass_rate` (`--run`) | Share of reads that earn the flag when run in the sandbox and validated, exactly as a real submission. **The number that matters.** |
-| `exact_rate` | Read equals the truth, ignoring trailing spaces and blank edge lines (indentation counts). |
+| `pass_rate` (`--run`) | Share of reads that earn the flag through the same sandbox and validator a submission uses (the server's maze-preview shortcut, already-solved check, scoring and display are skipped; none change pass/fail for puzzles 0–3). **The number that matters.** |
+| `exact_rate` | Read equals the truth after normalizing: trailing spaces, Windows line endings and blank edge lines are ignored, and tabs count as 4 spaces. Indentation counts. |
 | `mean_cer` | Character error rate: edits needed per character of the truth. 0 is perfect; 1.0 is an abstention; above 1.0 means invented text. |
 | `abstain_rate` | Share of samples where the reader declined. An abstention is safe; a confident wrong read is not. |
 | `latency_p50_s` / `latency_max_s` | Seconds per read. The first read includes loading the model. |

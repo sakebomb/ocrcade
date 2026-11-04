@@ -36,6 +36,25 @@ def test_next_name_counts_per_puzzle_and_writer(tmp_path):
     assert next_name(tmp_path, 2, "bob") == "p2-bob-001"
 
 
-def test_next_name_rejects_a_writer_that_is_not_a_plain_token(tmp_path):
+def test_load_rejects_an_unexpected_field(tmp_path):
+    record = {**_sample().__dict__, "extra": 1}
+    (tmp_path / MANIFEST).write_text(json.dumps(record) + "\n")
+    with pytest.raises(ValueError, match="line 1"):
+        load_samples(tmp_path)
+
+
+def test_next_name_never_reuses_a_name_after_a_gap(tmp_path):
+    append_sample(tmp_path, _sample("p2-alice-001"))
+    append_sample(tmp_path, _sample("p2-alice-003"))
+    assert next_name(tmp_path, 2, "alice") == "p2-alice-004"
+
+
+def test_next_name_skips_an_image_already_on_disk(tmp_path):
+    (tmp_path / "p2-alice-001.jpg").write_bytes(b"")
+    assert next_name(tmp_path, 2, "alice") == "p2-alice-002"
+
+
+@pytest.mark.parametrize("writer", ["alice/../x", "Alice", "a" * 33, ""])
+def test_next_name_rejects_a_writer_that_is_not_a_plain_token(tmp_path, writer):
     with pytest.raises(ValueError):
-        next_name(tmp_path, 2, "../alice")
+        next_name(tmp_path, 2, writer)

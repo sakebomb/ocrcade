@@ -9,7 +9,8 @@ TAB = "    "
 
 
 def normalize(code: str) -> str:
-    lines = code.replace("\r\n", "\n").replace("\t", TAB).split("\n")
+    # rstrip below also removes the \r of a Windows line ending.
+    lines = code.replace("\t", TAB).split("\n")
     return "\n".join(line.rstrip() for line in lines).strip("\n")
 
 

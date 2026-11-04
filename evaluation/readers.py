@@ -37,8 +37,8 @@ class Reader(Protocol):
 
 
 class HailoWholeFrame:
-    """Qwen2-VL-2B on the Hailo-10H, whole frame squeezed to 336x336. The baseline:
-    Phase 0 found it invents code at this size, and anything better must beat it."""
+    """Qwen2-VL-2B on the Hailo-10H, whole frame squeezed to 336x336. The baseline that
+    anything better must beat; docs/EVAL.md "Findings so far" records how it does."""
 
     name = "hailo-whole"
 
@@ -48,9 +48,13 @@ class HailoWholeFrame:
         self._backend = HailoVLMBackend(hef=hef, max_tokens=max_tokens)
 
     def read(self, image_bgr) -> ReadResult:
-        t0 = time.time()
-        code, reason = parse_transcription(self._backend.transcribe(image_bgr, HAILO_CODE_PROMPT))
-        return ReadResult(code, reason, time.time() - t0)
+        t0 = time.perf_counter()
+        raw = self._backend.transcribe(image_bgr, HAILO_CODE_PROMPT)
+        if raw is None:
+            # A failed or unloaded backend is an error, not the model choosing to abstain.
+            raise RuntimeError("Hailo generate failed or the model is not loaded")
+        code, reason = parse_transcription(raw)
+        return ReadResult(code, reason, time.perf_counter() - t0)
 
 
 class OllamaCode:

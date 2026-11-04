@@ -38,7 +38,10 @@ def _args() -> argparse.Namespace:
     p.add_argument("--medium", default="paper", choices=("paper", "screen"))
     p.add_argument("--set", dest="set_dir", type=Path, default=DEFAULT_SET)
     p.add_argument("--burst", type=int, default=8, help="frames per capture")
-    return p.parse_args()
+    args = p.parse_args()
+    if args.burst < 1:
+        p.error("--burst must be at least 1")
+    return args
 
 
 def _vision_service_running() -> bool:
@@ -65,7 +68,9 @@ def _capture_loop(cam, args: argparse.Namespace, truth: str, blur_min: float) ->
             return saved
         frame, blur = _sharpest(cam, args.burst)
         name = next_name(args.set_dir, args.puzzle, args.writer)
-        cv2.imwrite(str(args.set_dir / f"{name}.jpg"), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        path = args.set_dir / f"{name}.jpg"
+        if not cv2.imwrite(str(path), frame, [cv2.IMWRITE_JPEG_QUALITY, 95]):
+            raise OSError(f"could not write {path}")  # never record a missing image
         append_sample(args.set_dir, Sample(image=f"{name}.jpg", truth=truth,
                                            puzzle=args.puzzle, lang=args.lang,
                                            writer=args.writer, medium=args.medium,

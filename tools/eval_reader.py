@@ -4,7 +4,8 @@
     python3 tools/eval_reader.py ~/ocrcade-eval/handwriting --reader hailo-whole --run
 
 Per sample: character error rate (CER), exact match, latency, and with --run whether the
-read code earns the flag (sandbox + validator, as in a real submission). Writes every read
+read code earns the flag through the same sandbox and validator a submission uses (without
+the server's maze-preview shortcut, already-solved check, scoring or display). Writes every read
 and score to `<set>/results/<reader>-<timestamp>.json` so runs can be compared.
 Workflow and metric definitions: docs/EVAL.md.
 """
@@ -35,11 +36,14 @@ def _args() -> argparse.Namespace:
     p.add_argument("--run", action="store_true",
                    help="also run each read in the sandbox and validate it (kepler only)")
     p.add_argument("--limit", type=int, help="only the first N samples")
-    return p.parse_args()
+    args = p.parse_args()
+    if args.limit is not None and args.limit < 1:
+        p.error("--limit must be at least 1")
+    return args
 
 
 def _passes(sample: Sample, code: str | None) -> bool:
-    """Would this read earn the flag? Same path as a real submission."""
+    """Would this read earn the flag? The sandbox and validator a submission goes through."""
     if not code:
         return False
     from game.output_validator import validate
@@ -101,8 +105,12 @@ def main() -> int:
     reader = make_reader(args.reader, load_config()["vlm"])
     rows = []
     for sample in samples:
-        rows.append(_score(reader, sample, args.set_dir, args.run))
-        _print_row(rows[-1])
+        try:
+            row = _score(reader, sample, args.set_dir, args.run)
+        except Exception as e:  # one broken sample or backend call must not lose the run
+            row = {"image": sample.image, "error": f"{type(e).__name__}: {e}"}
+        rows.append(row)
+        _print_row(row)
     summary = _summary(rows, args.run)
     out_dir = args.set_dir / "results"
     out_dir.mkdir(exist_ok=True)
