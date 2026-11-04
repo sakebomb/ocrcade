@@ -1,7 +1,7 @@
 """How close a read is to the code that was actually written.
 
 Comparison runs on normalized text: the sandbox does not care about trailing spaces or
-blank edge lines, but it does care about indentation, so that is kept.
+blank lines, but it does care about indentation, so that is kept.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ TAB = "    "
 def normalize(code: str) -> str:
     # rstrip below also removes the \r of a Windows line ending.
     lines = code.replace("\t", TAB).split("\n")
-    return "\n".join(line.rstrip() for line in lines).strip("\n")
+    return "\n".join(s for s in (line.rstrip() for line in lines) if s)
 
 
 def levenshtein(a: str, b: str) -> int:

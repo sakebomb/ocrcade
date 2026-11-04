@@ -1,0 +1,20 @@
+{"image": "20260401-143836_submit.jpg", "truth": "Puzzle: 1\nTeam: megad00mer\nLang: bash\ncat flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "megad00mer", "medium": "paper", "blur": 350.7}
+{"image": "20260401-144922_submit.jpg", "truth": "Puzzle: 1\nTeam: megad00mer\nLang: bash\ncat flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "megad00mer", "medium": "paper", "blur": 544.9}
+{"image": "20260401-145139_submit.jpg", "truth": "Puzzle: 1\nTeam: megad00mer\nLang: bash\ncat flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "megad00mer", "medium": "paper", "blur": 587.4}
+{"image": "20260401-145404_submit.jpg", "truth": "Puzzle: 1\nTeam: megad00mer\nLang: bash\ncat flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "megad00mer", "medium": "paper", "blur": 399.2}
+{"image": "20260401-201112_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 170.6}
+{"image": "20260402-113304_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 457.6}
+{"image": "20260402-135519_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 371.8}
+{"image": "20260402-143525_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 404.4}
+{"image": "20260402-145930_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 14.3}
+{"image": "20260402-150822_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 20.8}
+{"image": "20260402-151334_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 226.6}
+{"image": "20260402-152321_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 265.7}
+{"image": "20260402-152827_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 235.7}
+{"image": "20260402-191504_submit.jpg", "truth": "Puzzle: 1\nTeam: Angel\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "angel", "medium": "paper", "blur": 175.9}
+{"image": "20260402-180615_submit.jpg", "truth": "Puzzle: 1\nTeam: Dimethyl\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "dimethyl", "medium": "screen", "blur": 269.2}
+{"image": "20260402-182522_submit.jpg", "truth": "Puzzle: 1\nTeam: Dimethyl\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "dimethyl", "medium": "screen", "blur": 802.3}
+{"image": "20260402-182952_submit.jpg", "truth": "Puzzle: 1\nTeam: Dimethyl\nLang: bash\ncat /puzzle/flag1.txt\n", "puzzle": 1, "lang": "bash", "writer": "dimethyl", "medium": "screen", "blur": 868.9}
+{"image": "20260402-183354_submit.jpg", "truth": "Puzzle: 2\nTeam: Megad00mer\nLang: python\nwith open('data.txt') as f:\n        print(sum(int(x) for x in f))\n", "puzzle": 2, "lang": "python", "writer": "megad00mer", "medium": "screen", "blur": 162.3}
+{"image": "20260402-184953_submit.jpg", "truth": "Puzzle: 2\nTeam: Megad00mer\nLang: python\nprint(sum(map(int, open(\"data.txt\"))))\n", "puzzle": 2, "lang": "python", "writer": "megad00mer", "medium": "screen", "blur": 364.1}
+{"image": "20260402-190829_submit.jpg", "truth": "Puzzle: 3\nTeam: Megad00mer\nLang: python\nprint('DDDDRRUURRUURRDDRRUURRDDDDRRDDDDDDLLDDRR')\n", "puzzle": 3, "lang": "python", "writer": "megad00mer", "medium": "screen", "blur": 190.1}

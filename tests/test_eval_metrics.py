@@ -6,6 +6,10 @@ def test_normalize_drops_trailing_space_and_blank_edges():
     assert normalize("\n\nx = 1   \r\n  y = 2\t\n\n") == "x = 1\n  y = 2"
 
 
+def test_normalize_drops_blank_lines_between_code():
+    assert normalize("Lang: bash\n\n   \ncat f") == "Lang: bash\ncat f"
+
+
 def test_normalize_turns_windows_line_endings_into_newlines():
     assert normalize("a\r\nb") == "a\nb"
     assert "\r" not in normalize("a\r\n\r\nb")

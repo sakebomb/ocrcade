@@ -1,9 +1,20 @@
 """Labelled-sample manifest used by the capture and eval tools (pure, runs in CI)."""
 import json
+from pathlib import Path
 
 import pytest
 
 from evaluation.dataset import MANIFEST, Sample, append_sample, load_samples, next_name
+
+SETS = Path(__file__).resolve().parent.parent / "evaluation" / "sets"
+
+
+@pytest.mark.parametrize("label_file", sorted(SETS.glob("*.jsonl")), ids=lambda p: p.name)
+def test_committed_label_files_load(tmp_path, label_file):
+    (tmp_path / MANIFEST).write_text(label_file.read_text())
+    samples = load_samples(tmp_path)
+    assert samples and all(s.truth.strip() for s in samples)
+    assert len({s.image for s in samples}) == len(samples)
 
 
 def _sample(name: str = "p2-alice-001") -> Sample:
