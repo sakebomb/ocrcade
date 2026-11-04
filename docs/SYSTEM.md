@@ -59,15 +59,18 @@ read-back.)
 
 | # | Type | What the player does |
 |---|------|----------------------|
-| 1 | Code | Sum the numbers, one per line, in `data.txt`. Beginner. |
-| 2 | Code | Same, as a one-liner. |
-| 3 | Code | Print the moves (`U/D/L/R`) that walk a maze. |
-| 4 | Code | Harder maze. |
+| 1 | Code | Print the flag file `/puzzle/flag1.txt`. Beginner. |
+| 2 | Code | Sum the numbers, one per line, in `/puzzle/data.txt`. |
+| 3 | Code | Print the moves (`U/D/L/R`) that walk the fixed maze in `/puzzle/maze_fixed.txt`. |
+| 4 | Code | Walk a 15×15 maze regenerated each time the server starts or resets. |
 | 5 | Camera | **Konami code** — perform ↑↑↓↓←→←→BA with on-camera gestures. No code. |
 | 6 | Camera | **Fruit Ninja** — slice fruit with hand motion. No code. |
 
-Each code puzzle has, on kepler under the run directory: `puzzles/levelN/` with the
-input data, the expected output, and the flag awarded on success. Code runs inside
+Each code puzzle has a folder `puzzles/levelN/` on kepler, mounted read-only at
+`/puzzle` inside the sandbox. What it holds differs per puzzle: level 1 the flag file to
+print, level 2 the input data and expected answer, level 3 the maze. The flags the
+validator awards live in `flags/flagN.txt`; `puzzles/level1/flag1.txt` must match
+`flags/flag1.txt`. Code runs inside
 a locked-down sandbox (`bwrap`, no network, resource limits) so untrusted player
 code can't harm the Pi.
 
@@ -96,11 +99,11 @@ still work, code reads abstain with an honest message).
 
 ## 5. Software setup & deploy
 
-The code lives in this repo and is deployed to **`kepler:~/ocrcade`** (the running
-copy is a plain file tree, not a git checkout). Services are systemd units:
+The code lives in this repo and is deployed to **`kepler:~/ocrcade`**, a git checkout
+on branch `deploy`. Services are systemd units:
 
-- **`ocrcade-exec.service`** — the Flask exec/display server (`server.py`, port 5000,
-  loopback). Runs code, validates, drives the framebuffer, talks to scoring.
+- **`ocrcade-exec.service`** — the Flask exec/display server (`server.py`, port 5000 on
+  the address in `server.host`). Runs code, validates, drives the framebuffer, talks to scoring.
 - **`ocrcade-vision.service`** — the camera daemon (`daemon.py`). The state machine.
 
 ```bash
@@ -116,9 +119,11 @@ Runtime dependencies are already installed on kepler: OpenCV (incl. `cv2.aruco`)
 kepler — it's the Ollama GPU.
 
 ### Deploy (updating the code)
-Back up the running copy, sync code, restart. Event data (`teams.json`,
-`flag_config.json`, `.env`, `flags/`, `puzzles/`, `konami_config.json`) is preserved
-across deploys; the old copy is kept for instant revert.
+From a clone of this repo, run `deploy/deploy.sh [REF]` (default `main`). It pushes the
+commit into kepler's checkout, restarts both services, and checks `/health`. Event data
+(`teams.json`, `flag_config.json`, `.env`, `flags/`, flag files under `puzzles/`,
+`konami_config.json`) is gitignored, so a deploy never touches it. The script prints the
+previous commit; deploying that commit rolls back. Setup: [`deploy/README.md`](../deploy/README.md).
 
 ---
 
@@ -197,8 +202,7 @@ a human label like **"PUZZLE 2 · PYTHON"**, plus a contact sheet. Print them, i
 on matte stock (less glare). The marker ID → (puzzle, language) mapping is fixed in
 `vision/markers.py`; you don't need to configure anything unless you re-map it.
 
-Players make their **code** cards with `tools/card_generator.html` (or just show code
-on a laptop) — see the Player Guide.
+Players show their **code** on a laptop screen or on paper — see the Player Guide.
 
 ---
 
@@ -252,8 +256,9 @@ Lighting and camera angle matter more than anything else.
 | nothing on the monitor | exec service / framebuffer | `systemctl status ocrcade-exec`; check `/dev/fb0` |
 | exec won't start | port 5000 busy / config | `journalctl -u ocrcade-exec`; ensure old copy stopped |
 
-**Revert to the previous version:** the deploy keeps the prior tree; stop the
-services, restore it, and restart (the deploy notes record the exact backup path).
+**Revert to the previous version:** run `deploy/deploy.sh <previous-commit>`; each
+deploy prints the exact command. On kepler, `git -C ~/ocrcade log --oneline -1` shows
+what is live.
 
 ---
 

@@ -1,7 +1,7 @@
 # Contributing
 
 ## Workflow
-- Branch from `main` (`feat/`, `fix/`, `refactor/`, `test/`). No direct commits to `main`.
+- Branch from `main` (`feat/`, `fix/`, `refactor/`, `test/`, `docs/`). No direct commits to `main`.
 - Small PRs. Squash merge.
 - CI (ruff + byte-compile) must pass.
 
