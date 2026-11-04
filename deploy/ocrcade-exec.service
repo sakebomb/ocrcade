@@ -10,6 +10,10 @@ WorkingDirectory=/home/sakebomb/ocrcade
 # RTB credentials (OCRCADE_RTB_*) — never commit the real file
 EnvironmentFile=-/home/sakebomb/ocrcade/.env
 ExecStart=/usr/bin/python3 /home/sakebomb/ocrcade/server.py
+# The server gets its own cgroup subtree, so each sandbox run can be capped as a whole
+# (1 GB, no swap, 64 processes; game/sandbox_cgroup.py). The memory cap also needs
+# cgroup_enable=memory in /boot/firmware/cmdline.txt on a Raspberry Pi.
+Delegate=memory pids
 Restart=on-failure
 RestartSec=3
 
