@@ -62,20 +62,29 @@ class HailoVLMBackend:
             img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
         return img.astype(np.uint8)
 
-    def read_number(self, image_bgr: np.ndarray) -> int | None:
-        """Read just the puzzle number — the only thing this model is trusted for."""
+    def transcribe(self, image_bgr: np.ndarray, prompt_text: str,
+                   max_tokens: int | None = None) -> str | None:
+        """One image + prompt generate call. Returns the raw model output (end tokens
+        included), or None if the model is unavailable or the call failed. The image is
+        resized to the HEF's fixed input, so callers wanting detail must crop first."""
         if not self._ensure_loaded():
             return None
         frame = self._frame(image_bgr)
         prompt = [{"role": "user", "content": [
-            {"type": "image"}, {"type": "text", "text": READ_NUMBER_PROMPT}]}]
+            {"type": "image"}, {"type": "text", "text": prompt_text}]}]
         try:
             self._vlm.clear_context()
-            out = self._vlm.generate_all(prompt=prompt, frames=[frame],
-                                         temperature=0.1, seed=42,
-                                         max_generated_tokens=self.max_tokens)
+            return self._vlm.generate_all(prompt=prompt, frames=[frame],
+                                          temperature=0.1, seed=42,
+                                          max_generated_tokens=max_tokens or self.max_tokens)
         except Exception as e:
-            log.error(f"Hailo read_number failed: {e}")
+            log.error(f"Hailo generate failed: {e}")
+            return None
+
+    def read_number(self, image_bgr: np.ndarray) -> int | None:
+        """Read just the puzzle number — the only thing this model is trusted for."""
+        out = self.transcribe(image_bgr, READ_NUMBER_PROMPT)
+        if out is None:
             return None
         out = out.replace("<|im_end|>", "").strip()
         try:
