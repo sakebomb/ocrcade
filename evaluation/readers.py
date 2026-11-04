@@ -57,6 +57,29 @@ class HailoWholeFrame:
         return ReadResult(code, reason, time.perf_counter() - t0)
 
 
+class HailoOCR:
+    """PaddleOCR text detection + recognition on the Hailo-10H, with lines, spaces and
+    indentation rebuilt from box positions (vision/backends/hailo_ocr.py)."""
+
+    name = "hailo-ocr"
+
+    def __init__(self, cfg: dict):
+        from vision.backends.hailo_ocr import HailoOCRBackend
+
+        self._backend = HailoOCRBackend(det_hef=cfg["det_hef"], rec_hef=cfg["rec_hef"],
+                                        keys=cfg["keys"], min_conf=cfg.get("min_conf", 0.6))
+
+    def read(self, image_bgr) -> ReadResult:
+        t0 = time.perf_counter()
+        text = self._backend.read_text(image_bgr)
+        if text is None:
+            raise RuntimeError("Hailo OCR models are not loaded")
+        dt = time.perf_counter() - t0
+        if not text.strip():
+            return ReadResult(None, "no confident text", dt)
+        return ReadResult(text, "", dt)
+
+
 class OllamaCode:
     """The production GPU reader (Qwen2.5-VL-7B via Ollama), for comparison when a GPU
     is reachable. Not part of the all-on-the-Pi target."""
@@ -76,11 +99,13 @@ class OllamaCode:
                           r.latency_s)
 
 
-READERS = ("hailo-whole", "ollama")
+READERS = ("hailo-ocr", "hailo-whole", "ollama")
 
 
 def make_reader(name: str, vlm_cfg: dict) -> Reader:
     """Build a reader from its name and the config's `vlm:` block."""
+    if name == "hailo-ocr":
+        return HailoOCR(vlm_cfg["hailo_ocr"])
     if name == "hailo-whole":
         return HailoWholeFrame(hef=vlm_cfg["hailo"]["hef"])
     if name == "ollama":

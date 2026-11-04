@@ -15,6 +15,12 @@ vlm:
     hef: "/home/sakebomb/Qwen2-VL-2B-Instruct.hef"  # 336x336 input; coarse only
     max_tokens: 64
 
+  hailo_ocr:   # PaddleOCR on the Hailo: reads code (eval reader `hailo-ocr`; tools/fetch_hailo_ocr.sh)
+    det_hef: "/home/sakebomb/hailo-models/paddle_ocr_v5_mobile_detection.hef"
+    rec_hef: "/home/sakebomb/hailo-models/paddle_ocr_v6_medium_recognition.hef"
+    keys: "/home/sakebomb/hailo-models/ppocr_keys_v6_18710.txt"
+    min_conf: 0.6    # a line whose mean character confidence is lower is dropped
+
 gating:
   scan_fps: 4
   blur_min: 60.0          # variance-of-Laplacian; below = too blurry to read (empty scene ~13, real cards ~380; verified on device)
