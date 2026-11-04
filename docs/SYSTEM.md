@@ -96,11 +96,11 @@ still work, code reads abstain with an honest message).
 
 ## 5. Software setup & deploy
 
-The code lives in this repo and is deployed to **`kepler:~/ocrcade`** (the running
-copy is a plain file tree, not a git checkout). Services are systemd units:
+The code lives in this repo and is deployed to **`kepler:~/ocrcade`**, a git checkout
+on branch `deploy`. Services are systemd units:
 
-- **`ocrcade-exec.service`** — the Flask exec/display server (`server.py`, port 5000,
-  loopback). Runs code, validates, drives the framebuffer, talks to scoring.
+- **`ocrcade-exec.service`** — the Flask exec/display server (`server.py`, port 5000 on
+  the address in `server.host`). Runs code, validates, drives the framebuffer, talks to scoring.
 - **`ocrcade-vision.service`** — the camera daemon (`daemon.py`). The state machine.
 
 ```bash
@@ -116,9 +116,11 @@ Runtime dependencies are already installed on kepler: OpenCV (incl. `cv2.aruco`)
 kepler — it's the Ollama GPU.
 
 ### Deploy (updating the code)
-Back up the running copy, sync code, restart. Event data (`teams.json`,
-`flag_config.json`, `.env`, `flags/`, `puzzles/`, `konami_config.json`) is preserved
-across deploys; the old copy is kept for instant revert.
+From a clone of this repo, run `deploy/deploy.sh [REF]` (default `main`). It pushes the
+commit into kepler's checkout, restarts both services, and checks `/health`. Event data
+(`teams.json`, `flag_config.json`, `.env`, `flags/`, flag files under `puzzles/`,
+`konami_config.json`) is gitignored, so a deploy never touches it. The script prints the
+previous commit; deploying that commit rolls back. Setup: [`deploy/README.md`](../deploy/README.md).
 
 ---
 
@@ -197,8 +199,7 @@ a human label like **"PUZZLE 2 · PYTHON"**, plus a contact sheet. Print them, i
 on matte stock (less glare). The marker ID → (puzzle, language) mapping is fixed in
 `vision/markers.py`; you don't need to configure anything unless you re-map it.
 
-Players make their **code** cards with `tools/card_generator.html` (or just show code
-on a laptop) — see the Player Guide.
+Players show their **code** on a laptop screen or on paper — see the Player Guide.
 
 ---
 
@@ -252,8 +253,9 @@ Lighting and camera angle matter more than anything else.
 | nothing on the monitor | exec service / framebuffer | `systemctl status ocrcade-exec`; check `/dev/fb0` |
 | exec won't start | port 5000 busy / config | `journalctl -u ocrcade-exec`; ensure old copy stopped |
 
-**Revert to the previous version:** the deploy keeps the prior tree; stop the
-services, restore it, and restart (the deploy notes record the exact backup path).
+**Revert to the previous version:** run `deploy/deploy.sh <previous-commit>`; each
+deploy prints the exact command. On kepler, `git -C ~/ocrcade log --oneline -1` shows
+what is live.
 
 ---
 

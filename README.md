@@ -75,6 +75,10 @@ python3 server.py          # exec + display server (:5000)
 python3 daemon.py          # vision loop
 ```
 
+On kepler both run as systemd services; update them with `deploy/deploy.sh` (see
+[`deploy/README.md`](deploy/README.md)). Working on this repo with an AI agent: start
+with [`CLAUDE.md`](CLAUDE.md).
+
 ## Configuration
 
 See `config.yaml`. Key knobs: `vlm.ollama.{url,model,num_ctx}` (**cap `num_ctx`**, or
