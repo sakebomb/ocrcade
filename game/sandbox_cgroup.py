@@ -3,7 +3,8 @@ process count, across every process the player's code starts.
 
 The `ulimit` caps in sandbox_runner apply per process (64 processes x 1 GB each would
 still exhaust the Pi), so the total needs a cgroup. ocrcade-exec.service runs with
-`Delegate=yes`, which gives the server its own cgroup subtree:
+`Delegate=memory pids` and `OCRCADE_SANDBOX_CGROUP=1` (sandbox_runner only builds this
+when that is set), which gives the server its own cgroup subtree:
 
     ocrcade-exec.service/      the delegated root (controllers enabled for children)
       server/                  the server process (cgroup v2 forbids processes in a

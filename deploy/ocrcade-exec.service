@@ -14,6 +14,7 @@ ExecStart=/usr/bin/python3 /home/sakebomb/ocrcade/server.py
 # (1 GB, no swap, 64 processes; game/sandbox_cgroup.py). The memory cap also needs
 # cgroup_enable=memory in /boot/firmware/cmdline.txt on a Raspberry Pi.
 Delegate=memory pids
+Environment=OCRCADE_SANDBOX_CGROUP=1
 Restart=on-failure
 RestartSec=3
 

@@ -39,6 +39,7 @@ COMPILE_TIMEOUT = 30   # wall-clock seconds for the C++ compile
 SLOT_WAIT       = 5    # seconds a submission waits for the one run slot
 MEMORY_MAX      = 1024 ** 3   # bytes, all of one run's processes together
 PIDS_MAX        = 64
+CGROUP_ENV      = 'OCRCADE_SANDBOX_CGROUP'   # '1' turns the run cgroup on
 BWRAP           = '/usr/bin/bwrap'
 PUZZLES_DIR     = Path(__file__).resolve().parent.parent / 'puzzles'
 
@@ -68,13 +69,26 @@ def run_cgroup() -> RunCgroup:
     global _cgroup
     with _cgroup_lock:
         if _cgroup is None:
-            try:
-                _cgroup = RunCgroup.for_this_process(MEMORY_MAX, PIDS_MAX)
-            except OSError as e:  # no /proc/self/cgroup (not Linux)
-                log.warning(f"sandbox cgroup unavailable: {e}")
-                _cgroup = RunCgroup(Path('/nonexistent'), MEMORY_MAX, PIDS_MAX)
-            _cgroup.setup()
+            _cgroup = _make_cgroup()
         return _cgroup
+
+
+def _make_cgroup() -> RunCgroup:
+    # Opt-in: setup moves every process in this cgroup into server/, which on a desktop
+    # is the whole terminal scope. Only ocrcade-exec.service (and the kepler test run)
+    # set the variable.
+    if os.environ.get(CGROUP_ENV) != '1':
+        cg = RunCgroup(Path('/nonexistent'), MEMORY_MAX, PIDS_MAX)
+        cg.status = f'off: {CGROUP_ENV}=1 is not set (ocrcade-exec.service sets it)'
+        log.warning(f"sandbox cgroup {cg.status}; only the per-process ulimits apply")
+        return cg
+    try:
+        cg = RunCgroup.for_this_process(MEMORY_MAX, PIDS_MAX)
+    except OSError as e:  # no /proc/self/cgroup (not Linux)
+        log.warning(f"sandbox cgroup unavailable: {e}")
+        cg = RunCgroup(Path('/nonexistent'), MEMORY_MAX, PIDS_MAX)
+    cg.setup()
+    return cg
 
 
 def run(puzzle: int, lang: str, code: str) -> dict:
