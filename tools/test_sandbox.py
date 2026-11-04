@@ -4,7 +4,8 @@ sandbox blocks env leakage / fork bombs / host-file reads while running real cod
 caps a whole run's memory at 1 GB, and runs one submission at a time.
 
 The memory cap needs a delegated cgroup, as ocrcade-exec.service has. Run it in one:
-    sudo systemd-run --uid=sakebomb -p Delegate=yes --wait --pipe --quiet --same-dir \\
+    sudo systemd-run --uid=sakebomb -p Delegate=yes -E OCRCADE_SANDBOX_CGROUP=1 \\
+        --wait --pipe --quiet --same-dir \\
         python3 tools/test_sandbox.py
 """
 import os
