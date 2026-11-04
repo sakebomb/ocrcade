@@ -137,5 +137,17 @@ that answered within 30 s: mean CER **0.009**, 9 of 13 exact. The other 7 timed 
 and the median read took 14 s. Grok reasons before it answers, and on one frame that
 took 8.5 to 68 s across runs (650 to 4,700 reasoning tokens). `reasoning_effort: low`
 did not reliably help. It reads far better than anything on the Pi, but players cannot
-wait that long. It needs a non-reasoning vision model before it goes in front of
-`hailo_ocr` in `vlm.code_readers`.
+wait that long.
+
+**2026-11-03, `event-2026-04`, `litellm` with `grok-fast` (Grok 4.20, non-reasoning).**
+Mean CER **0.054**, exact **15/20**, no errors, 0.78 s per read (1.5 s max). This is
+now first in `vlm.code_readers`, with `hailo_ocr` behind it. Almost all of its error
+comes from two screen frames:
+
+- On `184953` it returned only the code and left out the old-format
+  `Puzzle:/Team:/Lang:` header. That header is part of the truth for this set, but
+  today's cards carry it on the ArUco marker, so the miss does not matter in play.
+- On `190829` it put a space inside the puzzle 3 move string. That would fail the maze.
+
+`claude-sonnet-5-5` on the same key is not scored yet: its first requests came back
+HTTP 400 from Anthropic, then the key's 30-requests-per-minute limit cut the run short.
