@@ -2,7 +2,7 @@
 
 OCRcade is a coding arcade. You write a short program on paper, hold it up to a camera, and the machine reads it, runs it in a sandbox, and tells you whether it solved the puzzle. Every puzzle is a path to a flag. The cabinet is a Raspberry Pi 5 with a camera and a Hailo accelerator, and the screen is a framebuffer scoreboard.
 
-If you build on this, keep the copyright notice and credit OCRcade.
+If you build on this, a mention of OCRcade is welcome.
 
 ## How a turn works
 

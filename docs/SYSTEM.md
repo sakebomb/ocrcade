@@ -113,8 +113,9 @@ curl -s http://127.0.0.1:5000/health         # {"status":"ok"}
 ```
 
 Runtime dependencies are already installed on kepler: OpenCV (incl. `cv2.aruco`),
-`picamera2`, `requests`, `PyYAML`, `lgpio`. The code-reading model is **not** on
-kepler — it's the Ollama GPU.
+`picamera2`, `requests`, `PyYAML`, `lgpio`, and the Hailo OCR models. The first
+code reader (grok-fast) runs off the Pi. Hailo OCR on kepler reads the code when
+that reader is down.
 
 ### Deploy (updating the code)
 From a clone of this repo, run `deploy/deploy.sh [REF]` (default `main`). It pushes the
@@ -246,8 +247,8 @@ Lighting and camera angle matter more than anything else.
 
 | Symptom | Likely cause | Fix |
 |--------|--------------|-----|
-| daemon log: `degraded=True` | GPU/Ollama unreachable | check the 4090 + network; `curl …:11434/api/tags` |
-| code reads always abstain | bad lighting / GPU model missing | improve light; `ollama pull qwen2.5vl:7b` on the GPU |
+| daemon log: `degraded=True` | the first code reader is unreachable | Hailo OCR still reads; check that reader's URL, key, and network |
+| code reads come back empty | bad lighting, or every reader failed | improve the light and hold steady; confirm the Hailo OCR models are installed |
 | puzzle card never selects | marker out of frame / glare | fill frame with the card; matte print; lower `select.marker_stable_frames` |
 | "TEAM NOT RECOGNISED" | team not in roster / no `# team:` line | add to `roster.names`; ensure the code has the comment |
 | button does nothing | `mode` still `auto`, or wiring | set `button.mode: gpio`; check pin/GND; restart |
@@ -270,19 +271,15 @@ what is live.
   arcade-style button is more fun and more obvious than a tiny tactile one.
 - **Fill the roster.** It's the safety net that makes team names bulletproof; without
   it a misread name is accepted as-is.
-- **A dedicated VLM endpoint** would harden things: the 4090 is a shared workstation,
-  and we saw it throw a transient 500 mid-run under load. A small always-on Ollama
-  instance pinned to `qwen2.5vl:7b` (short `keep_alive`) avoids contention.
+- **The on-Pi reader is what keeps an event going.** Confirm the Hailo OCR models are installed before doors open, so a remote-reader outage still reads code.
 - **Mazes and stacked parens are the misread-prone cases** — the read-back exists
   exactly for these; tell players to glance at long strings before pressing GO.
 - **Keep the old version around** until a new one is proven on-device. Every deploy
   is reversible by design.
-- **Offline degradation is honest, not silent**: if the GPU link drops, code puzzles
-  say so and the camera games keep working — good for a venue with flaky wifi, but
-  bring the GPU on the same wired LAN if you can.
+- **A down remote reader is not a down cabinet.** `degraded=True` means Hailo OCR is reading instead. The camera games keep working either way.
 
 ### Possible future improvements
 - A dedicated read-back screen (currently shown via the preview view).
 - Per-team ArUco cards if you ever want scored team-vs-team camera rounds.
-- A small always-on VLM box to remove the shared-GPU dependency.
+- A reader that stays up without a remote API.
 - Auto-detected camera rotation, so the mount orientation doesn't need config.
