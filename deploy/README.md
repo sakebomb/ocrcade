@@ -1,6 +1,6 @@
 # Deploying OCRcade to kepler
 
-Everything runs on the Pi (`kepler`, `10.0.9.161`); the GPU VLM is reached over HTTP.
+Everything runs on the Pi. A remote code reader, when you use one, is reached over HTTP.
 `~/ocrcade` on kepler is a git checkout on branch `deploy`. You update it by pushing to
 it from a clone of this repo; it never needs GitHub credentials of its own.
 
@@ -15,7 +15,7 @@ push if a tracked file was edited on kepler; fix the change in the repo instead.
 
 ## One-time setup on your machine
 ```bash
-git remote add kepler ssh://sakebomb@10.0.9.161/home/sakebomb/ocrcade
+git remote add kepler ssh://<user>@<pi-host>/home/<user>/ocrcade
 ```
 
 ## First-time setup on a fresh Pi
