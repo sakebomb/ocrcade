@@ -121,6 +121,7 @@ _FONT_PATHS_BOLD = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf',
 ]
 
+FONT_XL = _find_font(_FONT_PATHS_BOLD, _s(120))
 FONT_LG = _find_font(_FONT_PATHS_BOLD, _s(56))
 FONT_MD = _find_font(_FONT_PATHS,      _s(36))
 FONT_SM = _find_font(_FONT_PATHS,      _s(24))
@@ -375,6 +376,13 @@ class Display:
 
     def _draw_scanning(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
         """Live OCR preview with stability progress bar."""
+        source = data.get('source_type', '')
+        if source == 'puzzle_seen':
+            self._draw_cue(draw, data, GREEN)
+            return
+        if source == 'ready_code':
+            self._draw_cue(draw, data, AMBER)
+            return
         self._border(draw, CYAN)
 
         spinner = ['|', '/', '-', '\\'][int(elapsed * 6) % 4]
@@ -417,6 +425,23 @@ class Display:
 
         label = f'{stability:.1f}s / {max_stability:.1f}s — hold steady'
         self._centered_text(draw, label, HEIGHT - _s(68), AMBER_DIM, FONT_SM)
+
+    def _draw_cue(self, draw: ImageDraw.ImageDraw, data: dict, color: tuple):
+        """Full-screen beat: the puzzle confirmation, then "ready your code"."""
+        self._border(draw, color)
+        lines = [str(ln) for ln in data.get('ocr_lines', []) if str(ln).strip()][:3]
+        fonts = (FONT_XL, FONT_LG, FONT_MD)
+        fills = (AMBER, WHITE, GREEN)
+        gap = _s(36)
+        heights = []
+        for i, line in enumerate(lines):
+            bbox = draw.textbbox((0, 0), line, font=fonts[i])
+            heights.append(bbox[3] - bbox[1])
+        total = sum(heights) + gap * max(len(lines) - 1, 0)
+        y = (HEIGHT - total) // 2
+        for i, line in enumerate(lines):
+            self._centered_text(draw, line, y, fills[i], fonts[i])
+            y += heights[i] + gap
 
     def _draw_received(self, draw: ImageDraw.ImageDraw, data: dict):
         self._border(draw, CYAN)

@@ -70,7 +70,7 @@ class Pipeline:
                  marker_stable_frames: int = 2, roster_cutoff: float = 0.6,
                  select_timeout_s: float = 60.0, readback_timeout_s: float = 30.0,
                  cooldown_s: float = 20.0, settle_s: float = 0.0, clear_frames: int = 1,
-                 now: Callable[[], float] = time.monotonic):
+                 confirm_s: float = 0.0, now: Callable[[], float] = time.monotonic):
         self.markers = markers
         self.gate = gate
         self.reader = reader
@@ -86,6 +86,7 @@ class Pipeline:
         self.cooldown_s = cooldown_s
         self.settle_s = settle_s
         self.clear_frames = clear_frames
+        self.confirm_s = confirm_s
         self._now = now
 
         self.state = State.IDLE
@@ -131,7 +132,7 @@ class Pipeline:
                 self._select(m)
             else:
                 self.gate.reset()
-                self.ui.puzzle_locked(self._puzzle, self._lang)
+                self._announce()
             return
         self._stray_id = None
         self._stray_run = 0
@@ -141,11 +142,11 @@ class Pipeline:
             return
         if not self._ready_for_code(m):
             self.gate.reset()
-            self.ui.puzzle_locked(self._puzzle, self._lang)
+            self._announce()
             return
         fired = self.gate.update(lores)
-        if self.gate.last.get("has_text"):
-            self.ui.await_code(self._puzzle, self._lang, self.gate.last.get("progress", 0.0))
+        progress = self.gate.last.get("progress", 0.0) if self.gate.last.get("has_text") else 0.0
+        self._announce(progress)
         if fired:
             self._read(grab_main())
 
@@ -171,7 +172,7 @@ class Pipeline:
         self._clear_run = 0
         self.gate.reset()
         log.info(f"SELECTED puzzle={m.puzzle} lang={m.lang} (marker {m.marker_id})")
-        self.ui.await_code(m.puzzle, m.lang, 0.0)
+        self.ui.puzzle_locked(m.puzzle, m.lang)
 
     def _read(self, main) -> None:
         r = self.reader.read_code(main)
@@ -220,15 +221,29 @@ class Pipeline:
             self._stray_run = 1
         return self._stray_run >= self.marker_stable_frames
 
+    def _confirmed(self) -> bool:
+        """The "got it" screen has been up long enough to read."""
+        return self._now() - self._t_state >= self.confirm_s
+
+    def _announce(self, progress: float = 0.0) -> None:
+        """Confirm the puzzle first. Ask for code only after that beat."""
+        if self._puzzle is None or self._lang is None:
+            return
+        if not self._confirmed():
+            self.ui.puzzle_locked(self._puzzle, self._lang)
+        else:
+            self.ui.await_code(self._puzzle, self._lang, progress)
+
     def _ready_for_code(self, marker) -> bool:
-        """The puzzle card is not the code. Wait it out, then settle_s, before reading."""
+        """The puzzle card is not the code. Confirm it, wait it out, then settle."""
         if marker is not None and marker.marker_id == self._sel_marker_id:
             self._clear_run = 0
             return False
         self._clear_run += 1
         if self._clear_run < self.clear_frames:
             return False
-        return self._now() - self._t_state >= self.settle_s
+        elapsed = self._now() - self._t_state
+        return elapsed >= self.settle_s and elapsed >= self.confirm_s
 
     def _select_reset(self) -> None:
         self._marker_run_id = None

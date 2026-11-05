@@ -92,16 +92,16 @@ class ServerUI:
                                  "source_type": "camera"}, timeout=1)
 
     def puzzle_locked(self, puzzle: int, lang: str) -> None:
-        _post(self.preview_url, {"ocr_lines": [f"Puzzle {puzzle} · {lang}",
-                                               "Take a moment, then show your code"],
+        _post(self.preview_url, {"ocr_lines": [f"PUZZLE {puzzle}", lang.upper(), "GOT IT"],
                                  "stability": 0.0, "max_stability": 1.0,
-                                 "source_type": "camera"}, timeout=1)
+                                 "source_type": "puzzle_seen"}, timeout=1)
 
     def await_code(self, puzzle: int, lang: str, progress: float) -> None:
-        _post(self.preview_url, {"ocr_lines": [f"Puzzle {puzzle} · {lang}",
-                                               "Show your code, hold steady…"],
-                                 "stability": progress, "max_stability": 1.0,
-                                 "source_type": "camera"}, timeout=1)
+        lines = ["READY", "YOUR CODE"]
+        if progress > 0:
+            lines.append("HOLD STEADY")
+        _post(self.preview_url, {"ocr_lines": lines, "stability": progress,
+                                 "max_stability": 1.0, "source_type": "ready_code"}, timeout=1)
 
     def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None:
         lines = [f"Puzzle {puzzle} · {lang} · team {team}", "READ:"]
@@ -146,6 +146,7 @@ class Daemon:
             select_timeout_s=float(cfg.get("select", {}).get("timeout_s", 60.0)),
             settle_s=float(cfg.get("select", {}).get("settle_s", 0.0)),
             clear_frames=int(cfg.get("select", {}).get("clear_frames", 1)),
+            confirm_s=float(cfg.get("select", {}).get("confirm_s", 2.0)),
             readback_timeout_s=float(rb.get("timeout_s", 30.0)),
             cooldown_s=float(g.get("cooldown_s", 20.0)))
 

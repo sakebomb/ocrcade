@@ -217,7 +217,8 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
 6. Dry-run one card of each puzzle yourself under the real lighting (see §10 tuning).
 
 **During play** — a team:
-1. grabs the **Puzzle·Lang card** and shows it → screen says *"Puzzle N · Lang"*
+1. grabs the **Puzzle·Lang card** and shows it → screen says *"PUZZLE N / GOT IT"*,
+   then *"READY YOUR CODE"*
 2. shows their **code** (with `# team: NAME`) → screen shows the read-back
 3. checks it and presses **GO** → it runs and scores; or re-shows to re-read.
 
@@ -236,7 +237,8 @@ Lighting and camera angle matter more than anything else.
   real cards — start from the defaults.
 - **Marker selection** (`select.marker_stable_frames`): how many frames the puzzle
   card must be seen to select. Raise it if cards select too eagerly. After it locks,
-  the code read waits until that card has left the frame (`clear_frames`) and
+  the screen holds *"PUZZLE N / GOT IT"* for `confirm_s`, then says *"READY YOUR CODE"*.
+  The code read waits until that card has left the frame (`clear_frames`) and
   `settle_s` seconds have passed, so the puzzle card itself is not read as code.
 - **Camera**: square-on, filling the frame, no glare. `camera.rotate` (0/90/180/270)
   if the camera is mounted sideways.

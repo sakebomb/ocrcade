@@ -19,11 +19,11 @@ it, runs it, and scores your team. Here's how to get read right the first time.
 1. **Pick the Puzzle·Lang card.** There's a printed card for each puzzle and
    language (e.g. **"PUZZLE 2 · PYTHON"**, with a black-and-white marker on it).
    Grab the one that matches what you're solving.
-2. **Show that card to the camera.** The screen confirms: *"Puzzle 2 · Python —
-   show your code."* (The marker is read instantly and exactly — no guessing your
-   puzzle or language.)
-3. **Show your code.** Put your code (laptop screen or paper) squarely in the
-   camera's view. When it's sharp and still, the read fires.
+2. **Show that card to the camera.** The screen confirms the puzzle it saw
+   (*"PUZZLE 2 / PYTHON / GOT IT"*), then says *"READY YOUR CODE"*. The marker is
+   read exactly — no guessing your puzzle or language.
+3. **Show your code** once the screen says ready. Put your code (laptop screen or
+   paper) squarely in the camera's view. When it's sharp and still, the read fires.
 4. **Check the read-back.** The screen shows the **code it read** and the **team it
    matched**. Look it over:
    - **Right?** Press the **GO button** to submit.

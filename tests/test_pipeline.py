@@ -186,6 +186,27 @@ def test_marker_must_be_stable_n_frames():
     assert h.tick() is State.SELECTED                      # 3rd consecutive
 
 
+def test_confirmation_holds_before_ready_your_code():
+    reader = FakeReader(_readable("# team: Anael\nx"))
+    h = Harness(reader, confirm_s=2.0, settle_s=3.0, clear_frames=1)
+    assert h.select(FakeMarker(1, 1, "python")) is State.SELECTED
+    assert h.ui.calls[-1] == ("puzzle_locked", 1, "python")
+    h.markers.current = None
+    h.gate.fire_next = True
+    h.clock.t = 1.0
+    assert h.tick() is State.SELECTED
+    assert reader.calls == 0
+    assert not any(c[0] == "await_code" for c in h.ui.calls)
+    h.clock.t = 2.0
+    h.gate.fire_next = True
+    assert h.tick() is State.SELECTED          # "ready" is up, settle is not done
+    assert reader.calls == 0
+    assert h.ui.calls[-1] == ("await_code", 1, "python")
+    h.clock.t = 3.0
+    h.gate.fire_next = True
+    assert h.tick() is State.READBACK
+
+
 def test_code_read_waits_for_the_puzzle_card_to_leave_and_settle():
     reader = FakeReader(_readable("# team: Anael\nx"))
     h = Harness(reader, settle_s=3.0, clear_frames=2)
