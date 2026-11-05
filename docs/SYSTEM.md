@@ -235,7 +235,9 @@ Lighting and camera angle matter more than anything else.
   (in frames at `scan_fps`) a card must be held still. These were validated on 323
   real cards — start from the defaults.
 - **Marker selection** (`select.marker_stable_frames`): how many frames the puzzle
-  card must be seen to select. Raise it if cards select too eagerly.
+  card must be seen to select. Raise it if cards select too eagerly. After it locks,
+  the code read waits until that card has left the frame (`clear_frames`) and
+  `settle_s` seconds have passed, so the puzzle card itself is not read as code.
 - **Camera**: square-on, filling the frame, no glare. `camera.rotate` (0/90/180/270)
   if the camera is mounted sideways.
 - **Read-back hold** (`readback.hold_s`, auto mode): how long the read shows before

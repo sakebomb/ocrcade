@@ -35,6 +35,7 @@ class UI(Protocol):
     """Display surface (daemon posts these to the exec/display server)."""
     def thumb(self, frame) -> None: ...
     def await_card(self) -> None: ...
+    def puzzle_locked(self, puzzle: int, lang: str) -> None: ...
     def await_code(self, puzzle: int, lang: str, progress: float) -> None: ...
     def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None: ...
     def feedback(self, title: str, detail: str) -> None: ...
@@ -68,7 +69,8 @@ class Pipeline:
                  challenge: Callable[[int, str], None],
                  marker_stable_frames: int = 2, roster_cutoff: float = 0.6,
                  select_timeout_s: float = 60.0, readback_timeout_s: float = 30.0,
-                 cooldown_s: float = 20.0, now: Callable[[], float] = time.monotonic):
+                 cooldown_s: float = 20.0, settle_s: float = 0.0, clear_frames: int = 1,
+                 now: Callable[[], float] = time.monotonic):
         self.markers = markers
         self.gate = gate
         self.reader = reader
@@ -82,6 +84,8 @@ class Pipeline:
         self.select_timeout_s = select_timeout_s
         self.readback_timeout_s = readback_timeout_s
         self.cooldown_s = cooldown_s
+        self.settle_s = settle_s
+        self.clear_frames = clear_frames
         self._now = now
 
         self.state = State.IDLE
@@ -90,6 +94,7 @@ class Pipeline:
         self._sel_marker_id: int | None = None
         self._marker_run_id: int | None = None
         self._marker_run = 0
+        self._clear_run = 0
         self._t_state = 0.0
         self._cooldown_until = 0.0
         self._pending: CardReading | None = None
@@ -125,6 +130,10 @@ class Pipeline:
             log.info("SELECTED timeout → IDLE")
             self._to_idle()
             return
+        if not self._ready_for_code(m):
+            self.gate.reset()
+            self.ui.puzzle_locked(self._puzzle, self._lang)
+            return
         fired = self.gate.update(lores)
         if self.gate.last.get("has_text"):
             self.ui.await_code(self._puzzle, self._lang, self.gate.last.get("progress", 0.0))
@@ -150,6 +159,7 @@ class Pipeline:
         self._puzzle, self._lang, self._sel_marker_id = m.puzzle, m.lang, m.marker_id
         self.state = State.SELECTED
         self._t_state = self._now()
+        self._clear_run = 0
         self.gate.reset()
         log.info(f"SELECTED puzzle={m.puzzle} lang={m.lang} (marker {m.marker_id})")
         self.ui.await_code(m.puzzle, m.lang, 0.0)
@@ -193,9 +203,20 @@ class Pipeline:
             self._marker_run = 1 if mid is not None else 0
         return m if (m is not None and self._marker_run >= self.marker_stable_frames) else None
 
+    def _ready_for_code(self, marker) -> bool:
+        """The puzzle card is not the code. Wait it out, then settle_s, before reading."""
+        if marker is not None and marker.marker_id == self._sel_marker_id:
+            self._clear_run = 0
+            return False
+        self._clear_run += 1
+        if self._clear_run < self.clear_frames:
+            return False
+        return self._now() - self._t_state >= self.settle_s
+
     def _select_reset(self) -> None:
         self._marker_run_id = None
         self._marker_run = 0
+        self._clear_run = 0
 
     def _to_idle(self) -> None:
         self.state = State.IDLE

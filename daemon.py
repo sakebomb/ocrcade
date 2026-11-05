@@ -91,6 +91,12 @@ class ServerUI:
                                  "stability": 0.0, "max_stability": 1.0,
                                  "source_type": "camera"}, timeout=1)
 
+    def puzzle_locked(self, puzzle: int, lang: str) -> None:
+        _post(self.preview_url, {"ocr_lines": [f"Puzzle {puzzle} · {lang}",
+                                               "Take a moment, then show your code"],
+                                 "stability": 0.0, "max_stability": 1.0,
+                                 "source_type": "camera"}, timeout=1)
+
     def await_code(self, puzzle: int, lang: str, progress: float) -> None:
         _post(self.preview_url, {"ocr_lines": [f"Puzzle {puzzle} · {lang}",
                                                "Show your code, hold steady…"],
@@ -138,6 +144,8 @@ class Daemon:
             challenge=self._run_challenge, roster_cutoff=self.roster_cutoff,
             marker_stable_frames=int(cfg.get("select", {}).get("marker_stable_frames", 2)),
             select_timeout_s=float(cfg.get("select", {}).get("timeout_s", 60.0)),
+            settle_s=float(cfg.get("select", {}).get("settle_s", 0.0)),
+            clear_frames=int(cfg.get("select", {}).get("clear_frames", 1)),
             readback_timeout_s=float(rb.get("timeout_s", 30.0)),
             cooldown_s=float(g.get("cooldown_s", 20.0)))
 

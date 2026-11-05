@@ -62,6 +62,9 @@ class FakeUI:
     def await_card(self):
         self.calls.append(("await_card",))
 
+    def puzzle_locked(self, puzzle, lang):
+        self.calls.append(("puzzle_locked", puzzle, lang))
+
     def await_code(self, puzzle, lang, _prog):
         self.calls.append(("await_code", puzzle, lang))
 
@@ -181,6 +184,22 @@ def test_marker_must_be_stable_n_frames():
     h = Harness(FakeReader(_readable("# team: Anael\nx")), marker_stable_frames=3)
     assert h.select(FakeMarker(4, 2, "python"), frames=2) is State.IDLE
     assert h.tick() is State.SELECTED                      # 3rd consecutive
+
+
+def test_code_read_waits_for_the_puzzle_card_to_leave_and_settle():
+    reader = FakeReader(_readable("# team: Anael\nx"))
+    h = Harness(reader, settle_s=3.0, clear_frames=2)
+    assert h.select(FakeMarker(4, 2, "python")) is State.SELECTED
+    h.markers.current = FakeMarker(4, 2, "python")
+    h.gate.fire_next = True
+    h.clock.t = 5.0
+    assert h.tick() is State.SELECTED
+    assert reader.calls == 0
+    h.markers.current = None
+    h.gate.fire_next = True
+    assert h.tick() is State.SELECTED          # one clear frame is not enough
+    h.gate.fire_next = True
+    assert h.tick() is State.READBACK
 
 
 def test_different_marker_reselects():
