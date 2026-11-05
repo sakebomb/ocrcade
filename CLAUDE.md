@@ -44,7 +44,7 @@ deploy/deploy.sh [REF]                          # push REF to kepler, restart, h
 
 | Fact | Value |
 |------|-------|
-| Address | `10.0.9.161` (mDNS `kepler.local`); SSH as `sakebomb` |
+| Address | `<pi-host>` (mDNS `kepler.local`); SSH as `sakebomb` |
 | Board / OS | Raspberry Pi 5, 8 GB, Debian 13 (trixie) |
 | Accelerator | AI HAT+ 2: Hailo-10H, firmware and `h10-hailort` 5.1.1, Python `hailo_platform` 5.1.1 with `hailo_platform.genai` |
 | Also installed | `hailort` 4.23 (the Hailo-8 runtime). Check both after any apt upgrade |
