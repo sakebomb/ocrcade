@@ -10,7 +10,7 @@ vlm:
   on_unreachable: degrade  # degrade = run camera challenges + routing
 
   ollama:
-    url: "http://10.0.9.150:11434"   # Jupiter / 4090
+    url: "http://<gpu-host>:11434"   # optional Ollama reader; set this to your GPU host
     model: "qwen2.5vl:7b"
     num_ctx: 4096                     # MUST cap or 32K default overflows 24GB VRAM -> CPU fallback
     keep_alive: "60s"                 # load-on-demand; unloads after idle (memory-pressure friendly)
