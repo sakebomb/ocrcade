@@ -95,6 +95,8 @@ class Pipeline:
         self._marker_run_id: int | None = None
         self._marker_run = 0
         self._clear_run = 0
+        self._stray_id: int | None = None
+        self._stray_run = 0
         self._t_state = 0.0
         self._cooldown_until = 0.0
         self._pending: CardReading | None = None
@@ -120,12 +122,19 @@ class Pipeline:
         self._select(m)
 
     def _tick_selected(self, lores, grab_main) -> None:
-        # a different puzzle card in view → switch puzzles
+        # A different card replaces this one only after it holds still. One bad
+        # frame used to launch Fruit Ninja while the player was showing puzzle 1.
         m = self.markers.pick(lores)
         if m is not None and m.marker_id != self._sel_marker_id:
-            self._select_reset()
-            self._select(m)
+            if self._stray_held(m):
+                self._select_reset()
+                self._select(m)
+            else:
+                self.gate.reset()
+                self.ui.puzzle_locked(self._puzzle, self._lang)
             return
+        self._stray_id = None
+        self._stray_run = 0
         if self._now() - self._t_state > self.select_timeout_s:
             log.info("SELECTED timeout → IDLE")
             self._to_idle()
@@ -151,7 +160,7 @@ class Pipeline:
     # --- transitions ---
     def _select(self, m) -> None:
         if m.puzzle in (5, 6):
-            log.info(f"camera-challenge marker → puzzle {m.puzzle}")
+            log.info(f"camera-challenge marker {m.marker_id} → puzzle {m.puzzle}")
             self.challenge(m.puzzle, m.lang)      # daemon owns camera handoff + team
             self._cooldown()
             self._to_idle()
@@ -203,6 +212,14 @@ class Pipeline:
             self._marker_run = 1 if mid is not None else 0
         return m if (m is not None and self._marker_run >= self.marker_stable_frames) else None
 
+    def _stray_held(self, marker) -> bool:
+        if marker.marker_id == self._stray_id:
+            self._stray_run += 1
+        else:
+            self._stray_id = marker.marker_id
+            self._stray_run = 1
+        return self._stray_run >= self.marker_stable_frames
+
     def _ready_for_code(self, marker) -> bool:
         """The puzzle card is not the code. Wait it out, then settle_s, before reading."""
         if marker is not None and marker.marker_id == self._sel_marker_id:
@@ -217,6 +234,8 @@ class Pipeline:
         self._marker_run_id = None
         self._marker_run = 0
         self._clear_run = 0
+        self._stray_id = None
+        self._stray_run = 0
 
     def _to_idle(self) -> None:
         self.state = State.IDLE

@@ -202,11 +202,26 @@ def test_code_read_waits_for_the_puzzle_card_to_leave_and_settle():
     assert h.tick() is State.READBACK
 
 
+def test_one_stray_frame_does_not_replace_the_locked_puzzle():
+    reader = FakeReader(_readable("# team: Anael\nx"))
+    h = Harness(reader)
+    h.select(FakeMarker(1, 1, "python"))
+    h.markers.current = FakeMarker(16, 6, "python")       # one frame looks like Fruit Ninja
+    assert h.tick() is State.SELECTED
+    assert h.challenges == []
+    assert (h.p._puzzle, h.p._lang) == (1, "python")
+    assert h.tick() is State.IDLE                         # second steady frame does switch
+    assert h.challenges == [(6, "python")]
+    assert reader.calls == 0
+
+
 def test_different_marker_reselects():
     h = Harness(FakeReader(_readable("# team: Anael\nx")))
     h.select(FakeMarker(4, 2, "python"))
     assert (h.p._puzzle, h.p._lang) == (2, "python")
     h.markers.current = FakeMarker(7, 3, "python")         # different card mid-select
+    h.tick()
+    assert (h.p._puzzle, h.p._lang) == (2, "python")       # one frame is not enough
     h.tick()
     assert (h.p._puzzle, h.p._lang) == (3, "python")
 
