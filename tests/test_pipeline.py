@@ -175,9 +175,47 @@ def test_camera_challenge_routes_without_code():
     h = Harness(reader)
     h.markers.current = FakeMarker(13, 5, "python")       # puzzle 5 = Konami
     h.tick()
-    assert h.tick() is State.IDLE                          # ran challenge → idle
+    assert h.tick() is State.SELECTED                      # locked, not started
+    assert h.challenges == []
+    assert h.tick() is State.IDLE                          # still held, confirm_s is 0
     assert h.challenges == [(5, "python")]
     assert h.submits == [] and reader.calls == 0           # no code read for a challenge
+
+
+def test_challenge_starts_only_after_confirmation_while_the_card_is_held():
+    reader = FakeReader(_readable("x"))
+    h = Harness(reader, confirm_s=2.0)
+    assert h.select(FakeMarker(16, 6, "python")) is State.SELECTED
+    h.clock.t = 1.0
+    assert h.tick() is State.SELECTED
+    assert h.challenges == []
+    h.clock.t = 2.0
+    assert h.tick() is State.IDLE
+    assert h.challenges == [(6, "python")]
+    assert reader.calls == 0
+
+
+def test_a_stray_frame_on_a_camera_puzzle_does_not_ask_for_code():
+    reader = FakeReader(_readable("x"))
+    h = Harness(reader, confirm_s=2.0)
+    assert h.select(FakeMarker(16, 6, "python")) is State.SELECTED
+    h.clock.t = 2.0
+    h.markers.current = FakeMarker(1, 1, "python")
+    assert h.tick() is State.SELECTED
+    assert h.challenges == []
+    assert ("await_code", 6, "python") not in h.ui.calls
+    assert h.ui.calls[-1][0] == "puzzle_locked"
+
+
+def test_challenge_does_not_start_if_the_card_leaves():
+    reader = FakeReader(_readable("x"))
+    h = Harness(reader, confirm_s=2.0)
+    assert h.select(FakeMarker(16, 6, "python")) is State.SELECTED
+    h.markers.current = None
+    h.clock.t = 2.0
+    assert h.tick() is State.IDLE
+    assert h.challenges == []
+    assert reader.calls == 0
 
 
 def test_marker_must_be_stable_n_frames():
@@ -231,7 +269,10 @@ def test_one_stray_frame_does_not_replace_the_locked_puzzle():
     assert h.tick() is State.SELECTED
     assert h.challenges == []
     assert (h.p._puzzle, h.p._lang) == (1, "python")
-    assert h.tick() is State.IDLE                         # second steady frame does switch
+    assert h.tick() is State.SELECTED                     # second frame locks puzzle 6
+    assert h.challenges == []
+    assert (h.p._puzzle, h.p._lang) == (6, "python")
+    assert h.tick() is State.IDLE                         # still held, so the game starts
     assert h.challenges == [(6, "python")]
     assert reader.calls == 0
 

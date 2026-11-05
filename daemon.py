@@ -212,9 +212,13 @@ class Daemon:
                     time.sleep(1.0)
             else:
                 raise RuntimeError("camera could not be reopened after Fruit Ninja")
-        code = "FRUITAGE_SOLVED" if ok else f"SCORE:{score}"
-        _post(self.submit_url, {"puzzle": 6, "team": team,
-                                "lang": "fruitage", "code": code}, timeout=10)
+        kind, detail = fruit_ninja_runner.player_result(ok, score)
+        if kind == "submit":
+            _post(self.submit_url, {"puzzle": 6, "team": team,
+                                    "lang": "fruitage", "code": detail}, timeout=10)
+        else:
+            _post(self.feedback_url, {"error": detail,
+                                      "ocr_lines": ["FRUIT NINJA", detail]})
 
 
 def main() -> None:

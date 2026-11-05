@@ -1,6 +1,6 @@
 """OCRcade capture pipeline — the ArUco-model state machine.
 
-    IDLE     ── stable puzzle marker ──▶ SELECTED   (puzzle 5/6 ▶ run challenge)
+    IDLE     ── stable puzzle marker ──▶ SELECTED   (puzzle 5/6 wait, then challenge)
     SELECTED ── gate fires on code ────▶ READBACK   (VLM read code + roster team)
     READBACK ── confirm GO ───────────▶ submit ▶ IDLE
              ── cancel / timeout ─────▶ IDLE
@@ -132,13 +132,21 @@ class Pipeline:
                 self._select(m)
             else:
                 self.gate.reset()
-                self._announce()
+                # A camera puzzle never asks for code. One bad frame must not
+                # flash "READY YOUR CODE" after the confirmation beat.
+                if self._puzzle in (5, 6):
+                    self.ui.puzzle_locked(self._puzzle, self._lang)
+                else:
+                    self._announce()
             return
         self._stray_id = None
         self._stray_run = 0
         if self._now() - self._t_state > self.select_timeout_s:
             log.info("SELECTED timeout → IDLE")
             self._to_idle()
+            return
+        if self._puzzle in (5, 6):
+            self._tick_challenge(m)
             return
         if not self._ready_for_code(m):
             self.gate.reset()
@@ -160,12 +168,6 @@ class Pipeline:
 
     # --- transitions ---
     def _select(self, m) -> None:
-        if m.puzzle in (5, 6):
-            log.info(f"camera-challenge marker {m.marker_id} → puzzle {m.puzzle}")
-            self.challenge(m.puzzle, m.lang)      # daemon owns camera handoff + team
-            self._cooldown()
-            self._to_idle()
-            return
         self._puzzle, self._lang, self._sel_marker_id = m.puzzle, m.lang, m.marker_id
         self.state = State.SELECTED
         self._t_state = self._now()
@@ -173,6 +175,25 @@ class Pipeline:
         self.gate.reset()
         log.info(f"SELECTED puzzle={m.puzzle} lang={m.lang} (marker {m.marker_id})")
         self.ui.puzzle_locked(m.puzzle, m.lang)
+
+    def _tick_challenge(self, marker) -> None:
+        """Puzzle 5/6 start only after the confirmation, and only if that card is still up."""
+        held = marker is not None and marker.marker_id == self._sel_marker_id
+        if not held:
+            self._clear_run += 1
+            self.ui.puzzle_locked(self._puzzle, self._lang)
+            if self._clear_run >= self.clear_frames:
+                log.info("challenge card left before start → IDLE")
+                self._to_idle()
+            return
+        self._clear_run = 0
+        if not self._confirmed():
+            self.ui.puzzle_locked(self._puzzle, self._lang)
+            return
+        log.info(f"camera-challenge marker {self._sel_marker_id} → puzzle {self._puzzle}")
+        self.challenge(self._puzzle, self._lang)
+        self._cooldown()
+        self._to_idle()
 
     def _read(self, main) -> None:
         r = self.reader.read_code(main)

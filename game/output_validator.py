@@ -73,11 +73,17 @@ def _validate_level1(stdout: str) -> tuple[bool, str]:
 
 
 # ── Level 2: Sum numbers from data.txt ───────────────────────────────────────
+def _contains_number(stdout: str, expected: str) -> bool:
+    """True when expected is its own number, not a prefix of a longer one."""
+    if not expected:
+        return False
+    return re.search(rf'(?<!\d){re.escape(expected)}(?!\d)', stdout) is not None
+
+
 def _validate_level2(stdout: str) -> tuple[bool, str]:
     expected_file = PUZZLES_DIR / 'level2' / 'expected.txt'
     expected = expected_file.read_text().strip()
-    # Accept the number anywhere in output
-    if expected in stdout:
+    if _contains_number(stdout, expected):
         return True, _read_flag(2)
     return False, 'Expected output not found. Check your math.'
 

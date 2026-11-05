@@ -57,3 +57,17 @@ def test_validate_maze_path_rejects_out_of_bounds():
 
 def test_validate_maze_path_rejects_wrong_endpoint():
     assert _validate_maze_path(MAZE, "RD") is False  # stops mid-maze, not at E
+
+
+def test_level2_accepts_the_number_and_rejects_a_longer_one(monkeypatch, tmp_path):
+    from game import output_validator as ov
+
+    level = tmp_path / "level2"
+    level.mkdir()
+    (level / "expected.txt").write_text("266389\n")
+    monkeypatch.setattr(ov, "PUZZLES_DIR", tmp_path)
+    monkeypatch.setattr(ov, "_read_flag", lambda _n: "FLAG")
+    assert ov.validate(2, "2663890") == (
+        False, "Expected output not found. Check your math.")
+    assert ov.validate(2, "266389")[0] is True
+    assert ov.validate(2, "total 266389\n")[0] is True

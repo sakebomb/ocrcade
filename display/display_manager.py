@@ -9,6 +9,7 @@ State machine: ATTRACT → RECEIVED → EXECUTING → SUCCESS/FAIL → ATTRACT
 """
 
 import base64
+import fcntl
 import json
 import logging
 import math
@@ -24,7 +25,48 @@ from PIL import Image, ImageDraw, ImageFont
 log = logging.getLogger('ocrcade.display')
 
 # ── Display geometry ────────────────────────────────────────────────────────────
-FB_DEV  = '/dev/fb0'
+FB_DEV   = '/dev/fb0'
+FB_BLANK = Path('/sys/class/graphics/fb0/blank')
+FB_RETRY_S = 2.0
+FBIOBLANK = 0x4611  # linux/fb.h — arg 0 is FB_BLANK_UNBLANK
+
+
+def unblank(path: Path = FB_BLANK) -> None:
+    """Wake a monitor that slept because the framebuffer was powered down."""
+    try:
+        path.write_text('0')
+    except OSError as e:
+        log.warning(f"could not unblank {path}: {e}")
+
+
+def wake(fb, path: Path = FB_BLANK) -> None:
+    """Unblank through the open framebuffer, then sysfs if that ioctl is refused.
+
+    The exec service runs as the login user. That user can write /dev/fb0, and
+    FBIOBLANK is the same kernel path as the sysfs blank file, which is often
+    root-only.
+    """
+    try:
+        fcntl.ioctl(fb, FBIOBLANK, 0)
+        return
+    except OSError as e:
+        log.warning(f"framebuffer unblank ioctl failed: {e}")
+    unblank(path)
+
+
+def open_fb(dev: str = FB_DEV):
+    """Open the framebuffer, or None when it does not exist yet.
+
+    No O_CREAT: open(..., 'wb') would create a regular file when the parent
+    directory is writable, and writing a picture into that file does not wake
+    the monitor. O_CLOEXEC matches open(), so a sandbox child does not inherit
+    the display.
+    """
+    try:
+        fd = os.open(dev, os.O_WRONLY | os.O_CLOEXEC)
+    except OSError:
+        return None
+    return os.fdopen(fd, 'wb')
 
 
 def _read_fb_geometry() -> tuple[int, int, int]:
@@ -173,11 +215,12 @@ class Display:
         self._thumb_b64     = ''    # latest camera thumbnail from Vision Pi
         self._fb_paused     = False # True while Fruit Ninja owns the framebuffer
         self._lock          = threading.Lock()
-        try:
-            self._fb        = open(FB_DEV, 'wb')
-        except OSError as e:
-            self._fb        = None   # no framebuffer (dev/CI) — render loop no-ops
-            log.warning(f"No framebuffer at {FB_DEV} ({e}) — display disabled")
+        self._fb            = open_fb()
+        self._fb_retry_at   = time.monotonic()
+        if self._fb is None:
+            log.warning(f"No framebuffer at {FB_DEV} — display retries until it appears")
+        else:
+            wake(self._fb)
         self._thread        = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -236,6 +279,12 @@ class Display:
 
     def fruitage_end(self):
         """Resume fb0 writes after Fruit Ninja exits."""
+        with self._lock:
+            fb = self._fb
+        if fb is not None:
+            wake(fb)
+        else:
+            unblank()
         with self._lock:
             self._fb_paused = False
         self._set('attract', {})
@@ -327,10 +376,24 @@ class Display:
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
+    def _reopen_fb(self) -> None:
+        now = time.monotonic()
+        if now - self._fb_retry_at < FB_RETRY_S:
+            return
+        self._fb_retry_at = now
+        fb = open_fb()
+        if fb is None:
+            return
+        self._fb = fb
+        wake(fb)
+        log.info(f"framebuffer open at {FB_DEV}")
+
     def _blit(self, img: Image.Image):
         with self._lock:
             if self._fb_paused:
                 return
+        if self._fb is None:
+            self._reopen_fb()
         if self._fb is None:
             return
         data = _to_framebuffer(img)

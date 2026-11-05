@@ -238,6 +238,7 @@ Lighting and camera angle matter more than anything else.
 - **Marker selection** (`select.marker_stable_frames`): how many frames the puzzle
   card must be seen to select. Raise it if cards select too eagerly. After it locks,
   the screen holds *"PUZZLE N / GOT IT"* for `confirm_s`, then says *"READY YOUR CODE"*.
+  Camera puzzles start after that same hold, and only while the card is still in frame.
   The code read waits until that card has left the frame (`clear_frames`) and
   `settle_s` seconds have passed, so the puzzle card itself is not read as code.
 - **Camera**: square-on, filling the frame, no glare. `camera.rotate` (0/90/180/270)
