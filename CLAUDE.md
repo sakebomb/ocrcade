@@ -7,10 +7,10 @@ shows the result on a monitor. Every puzzle is a path to its flag. The operator 
 
 ## Current direction
 
-- **Vision moves fully onto the Pi's AI HAT+ 2 (Hailo-10H).** Today the code reader is
-  Qwen2.5-VL-7B on a remote Ollama GPU (`vlm.ollama` in `config.yaml`), and the Hailo
-  Qwen2-VL-2B only reads the puzzle number: at its fixed 336x336 input, code text is too
-  small and it invents code. The plan is to read one cropped, enlarged text line at a time.
+- **Code readers are grok-fast, then Hailo OCR.** `vlm.code_readers` tries LiteLLM
+  (`grok-fast`) first and `hailo_ocr` (PaddleOCR on the Hailo-10H) when that reader is
+  down, slow, rate-limited, or over budget. The Hailo Qwen2-VL-2B is not a code reader:
+  at its fixed 336x336 input it only reads the puzzle number. Ollama is an optional reader.
 - **Handwriting is the main accuracy goal.** Measure it with a labelled set of photos before
   tuning anything; the gate thresholds were validated on screen cards only (light text on a
   dark screen), not on ink on paper.
@@ -22,7 +22,7 @@ shows the result on a monitor. Every puzzle is a path to its flag. The operator 
 |------|-----------|
 | `daemon.py` | Vision state machine: card marker → code frame → read → read-back → submit |
 | `server.py` | Flask exec/display server (:5000): sandbox run, validate, display |
-| `vision/` | Capture, frame gate, ArUco markers, prompts, VLM client, backends (`ollama_vlm`, `hailo_vlm`) |
+| `vision/` | Capture, frame gate, ArUco markers, prompts, reader client, backends (`litellm_vlm`, `hailo_ocr`, `ollama_vlm`, `hailo_vlm`) |
 | `game/` | Sandbox runner (bwrap), output validators, maze generator, roster match, RTB submitter |
 | `display/` | Framebuffer UI (`/dev/fb0`) |
 | `hw/button.py` | GPIO confirm button (lgpio) |

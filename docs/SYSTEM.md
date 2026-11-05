@@ -13,19 +13,20 @@ A **coding arcade game**. A team solves a small programming puzzle, shows their
 output, and scores them. Two of the six puzzles are camera mini-games (Konami
 code, Fruit Ninja) with no code at all.
 
-The whole thing runs on a single Raspberry Pi 5 (**kepler**) with an AI camera. A
-GPU elsewhere on the network does the hard part — reading code from a photo.
+The cabinet is a Raspberry Pi 5 (**kepler**) with an AI camera and a Hailo
+accelerator. `config.yaml` lists the code readers in order: grok-fast off the Pi,
+then PaddleOCR on the Hailo when that reader is down.
 
 ---
 
 ## 2. How it works, end to end
 
 ```
-  Player                     kepler (Pi 5)                         4090 GPU
-  ──────                     ─────────────                         ────────
+  Player                     kepler (Pi 5)                         code reader
+  ──────                     ─────────────                         ───────────
   show PUZZLE·LANG  ─▶  camera ─▶ ArUco marker decode ─▶ SELECT(puzzle, lang)
    card (ArUco)
-  show CODE         ─▶  camera ─▶ gate (sharp+steady) ─▶ frame ─▶ Qwen2.5-VL ─▶ code text
+  show CODE         ─▶  camera ─▶ gate (sharp+steady) ─▶ grok-fast, else Hailo OCR ─▶ code text
                                       │                                          │
                                   team line  ◀───────────────────────────────────┘
                                       │   "# team: NAME"  ─▶ roster fuzzy-match
@@ -42,9 +43,9 @@ The design splits the job so each part does what it's good at:
 |------|-----------|-----|
 | Which puzzle / language? | **ArUco marker** on a printed card | exact, organizer-controlled, robust at any angle/blur |
 | Which team? | **`# team:` line** in the code, fuzzy-matched to the **roster** | a one-character misread still resolves to the right registered team |
-| Read the code | **Qwen2.5-VL** (GPU, via Ollama) | far better than OCR at code; the one hard job |
+| Read the code | **`vlm.code_readers`**: grok-fast, then Hailo OCR | the off-Pi reader goes first; the Pi still reads code when it is down |
 | Catch a misread | **read-back + button** | the player confirms what was read before it's scored |
-| Don't waste GPU calls / avoid hallucination | **the gate** (blur + stability) | only sharp, steady frames are sent |
+| Don't read a bad frame | **the gate** (blur + stability) | only sharp, steady frames are sent |
 
 Why this shape: an earlier version had the camera read *everything* (puzzle, team,
 and code) off a text header. Team names and stacked symbols got misread, and the
@@ -80,20 +81,17 @@ Puzzles 5 & 6 are **anonymous fun rounds** — they're not attributed to a team.
 
 ## 4. Hardware setup
 
-- **kepler** — Raspberry Pi 5 (8 GB). Runs everything except the code-reading model.
+- **kepler** — Raspberry Pi 5 (8 GB) with a Hailo accelerator. Runs the game, including the on-Pi code reader.
 - **Camera** — IMX500 AI camera on kepler. Players show code/cards to it. Mount it
   so it sees a well-lit area where a laptop screen or paper can be held square-on.
 - **Display** — kepler's framebuffer (`/dev/fb0`) on an attached monitor shows the
   prompts, alignment thumbnail, read-back, and results.
-- **GPU** — a machine on the network running **Ollama** with `qwen2.5vl:7b`
-  (currently the 4090 at `10.0.9.150:11434`). kepler POSTs frames to it.
+- **Remote reader** — optional. The first entry in `vlm.code_readers` (grok-fast) runs off the Pi. Its URL and key come from the environment variables named in `config.yaml`.
 - **Button** (optional but recommended) — a momentary push-button for "GO / confirm".
   See §6.
 
 ### Network
-kepler must reach the Ollama GPU over the LAN. Code puzzles (1–4) need that link;
-if it's down the daemon runs in **degraded** mode (camera challenges + selection
-still work, code reads abstain with an honest message).
+When the first code reader is off the Pi, kepler has to reach it. If that reader is down, slow, rate-limited, or over budget, Hailo OCR on the Pi reads the code. Camera challenges and puzzle selection keep working either way.
 
 ---
 
@@ -115,8 +113,9 @@ curl -s http://127.0.0.1:5000/health         # {"status":"ok"}
 ```
 
 Runtime dependencies are already installed on kepler: OpenCV (incl. `cv2.aruco`),
-`picamera2`, `requests`, `PyYAML`, `lgpio`. The code-reading model is **not** on
-kepler — it's the Ollama GPU.
+`picamera2`, `requests`, `PyYAML`, `lgpio`, and the Hailo OCR models. The first
+code reader (grok-fast) runs off the Pi. Hailo OCR on kepler reads the code when
+that reader is down.
 
 ### Deploy (updating the code)
 From a clone of this repo, run `deploy/deploy.sh [REF]` (default `main`). It pushes the
@@ -211,7 +210,7 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
 **Before doors open**
 1. Generate + print the 18 puzzle cards (§8). Lay them out where teams can grab them.
 2. Put the registered teams in `roster.names` (§7).
-3. Confirm the GPU is up: `curl 10.0.9.150:11434/api/tags` lists `qwen2.5vl:7b`.
+3. Confirm the first code reader answers, or that Hailo OCR is loaded on the Pi.
 4. Wire + enable the button if using one (§6).
 5. `sudo systemctl restart ocrcade-exec ocrcade-vision`; confirm `/health` is ok and
    the daemon log says `degraded=False`.
@@ -248,8 +247,8 @@ Lighting and camera angle matter more than anything else.
 
 | Symptom | Likely cause | Fix |
 |--------|--------------|-----|
-| daemon log: `degraded=True` | GPU/Ollama unreachable | check the 4090 + network; `curl …:11434/api/tags` |
-| code reads always abstain | bad lighting / GPU model missing | improve light; `ollama pull qwen2.5vl:7b` on the GPU |
+| daemon log: `degraded=True` | the first code reader is unreachable | Hailo OCR still reads; check that reader's URL, key, and network |
+| code reads come back empty | bad lighting, or every reader failed | improve the light and hold steady; confirm the Hailo OCR models are installed |
 | puzzle card never selects | marker out of frame / glare | fill frame with the card; matte print; lower `select.marker_stable_frames` |
 | "TEAM NOT RECOGNISED" | team not in roster / no `# team:` line | add to `roster.names`; ensure the code has the comment |
 | button does nothing | `mode` still `auto`, or wiring | set `button.mode: gpio`; check pin/GND; restart |
@@ -272,19 +271,15 @@ what is live.
   arcade-style button is more fun and more obvious than a tiny tactile one.
 - **Fill the roster.** It's the safety net that makes team names bulletproof; without
   it a misread name is accepted as-is.
-- **A dedicated VLM endpoint** would harden things: the 4090 is a shared workstation,
-  and we saw it throw a transient 500 mid-run under load. A small always-on Ollama
-  instance pinned to `qwen2.5vl:7b` (short `keep_alive`) avoids contention.
+- **The on-Pi reader is what keeps an event going.** Confirm the Hailo OCR models are installed before doors open, so a remote-reader outage still reads code.
 - **Mazes and stacked parens are the misread-prone cases** — the read-back exists
   exactly for these; tell players to glance at long strings before pressing GO.
 - **Keep the old version around** until a new one is proven on-device. Every deploy
   is reversible by design.
-- **Offline degradation is honest, not silent**: if the GPU link drops, code puzzles
-  say so and the camera games keep working — good for a venue with flaky wifi, but
-  bring the GPU on the same wired LAN if you can.
+- **A down remote reader is not a down cabinet.** `degraded=True` means Hailo OCR is reading instead. The camera games keep working either way.
 
 ### Possible future improvements
 - A dedicated read-back screen (currently shown via the preview view).
 - Per-team ArUco cards if you ever want scored team-vs-team camera rounds.
-- A small always-on VLM box to remove the shared-GPU dependency.
+- A reader that stays up without a remote API.
 - Auto-detected camera rotation, so the mount orientation doesn't need config.
