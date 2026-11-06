@@ -32,13 +32,13 @@ READ_NUMBER_PROMPT = (
 # ArUco model: puzzle/lang come from the marker card, so the code frame is JUST
 # code (which may include a `# team: NAME` comment line). The VLM only transcribes
 # the code — no header to parse. readable:false abstention is still load-bearing.
+# Claude (claude-sonnet-5-5 via LiteLLM) declined the earlier, more emphatic wording
+# every time (finish_reason content_filter, no text). This wording reads code and
+# still abstains on a blank frame; checked on kepler 2026-11-06.
 READ_CODE_PROMPT = (
-    "This image shows source code on a screen or paper. Transcribe the code EXACTLY, "
-    "character for character. Preserve indentation, whitespace, quotes, parentheses, "
-    "and every symbol. Include comment lines such as '# team: NAME' verbatim. Do NOT "
-    "fix, complete, reformat, balance, or interpret the code — copy exactly what you "
-    "see, even if it looks wrong.\n"
-    "If the image is blurry, empty, or you cannot clearly read the code, respond with "
-    'ONLY: {"readable": false, "reason": "<short why>"}.\n'
-    'Otherwise respond with ONLY this JSON: {"readable": true, "code": "<str>"}'
+    "Transcribe the code in this image. Keep indentation and every symbol; keep "
+    "comment lines; do not fix or complete anything.\n"
+    'If you cannot read the code clearly, reply with only '
+    '{"readable": false, "reason": "<short why>"}. Otherwise reply with only '
+    '{"readable": true, "code": "<the code>"}.'
 )

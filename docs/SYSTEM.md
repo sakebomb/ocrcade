@@ -14,7 +14,7 @@ output, and scores them. Two of the six puzzles are camera mini-games (Konami
 code, Fruit Ninja) with no code at all.
 
 The cabinet is a Raspberry Pi 5 (**kepler**) with an AI camera and a Hailo
-accelerator. `config.yaml` lists the code readers in order: grok-fast off the Pi,
+accelerator. `config.yaml` lists the code readers in order: Claude Sonnet off the Pi,
 then PaddleOCR on the Hailo when that reader is down.
 
 ---
@@ -26,7 +26,7 @@ then PaddleOCR on the Hailo when that reader is down.
   ──────                     ─────────────                         ───────────
   show PUZZLE·LANG  ─▶  camera ─▶ ArUco marker decode ─▶ SELECT(puzzle, lang)
    card (ArUco)
-  show CODE         ─▶  camera ─▶ gate (sharp+steady) ─▶ grok-fast, else Hailo OCR ─▶ code text
+  show CODE         ─▶  camera ─▶ gate (sharp+steady) ─▶ Claude, else Hailo OCR ────▶ code text
                                       │                                          │
                                   team line  ◀───────────────────────────────────┘
                                       │   "# team: NAME"  ─▶ roster fuzzy-match
@@ -43,7 +43,7 @@ The design splits the job so each part does what it's good at:
 |------|-----------|-----|
 | Which puzzle / language? | **ArUco marker** on a printed card | exact, organizer-controlled, robust at any angle/blur |
 | Which team? | **`# team:` line** in the code, fuzzy-matched to the **roster** | a one-character misread still resolves to the right registered team |
-| Read the code | **`vlm.code_readers`**: grok-fast, then Hailo OCR | the off-Pi reader goes first; the Pi still reads code when it is down |
+| Read the code | **`vlm.code_readers`**: Claude Sonnet, then Hailo OCR | the off-Pi reader goes first; the Pi still reads code when it is down |
 | Catch a misread | **read-back + button** | the player confirms what was read before it's scored |
 | Don't read a bad frame | **the gate** (blur + stability) | only sharp, steady frames are sent |
 
@@ -87,7 +87,7 @@ Puzzles 5 & 6 are **anonymous fun rounds** — they're not attributed to a team.
   so it sees a well-lit area where a laptop screen or paper can be held square-on.
 - **Display** — kepler's framebuffer (`/dev/fb0`) on an attached monitor shows the
   prompts, alignment thumbnail, read-back, and results.
-- **Remote reader** — optional. The first entry in `vlm.code_readers` (grok-fast) runs off the Pi. Its URL and key come from the environment variables named in `config.yaml`.
+- **Remote reader** — optional. The first entry in `vlm.code_readers` (Claude Sonnet) runs off the Pi. Its URL and key come from the environment variables named in `config.yaml`.
 - **Button** (optional but recommended) — a momentary push-button for "GO / confirm".
   See §6.
 
@@ -115,7 +115,7 @@ curl -s http://127.0.0.1:5000/health         # {"status":"ok"}
 
 Runtime dependencies are already installed on kepler: OpenCV (incl. `cv2.aruco`),
 `picamera2`, `requests`, `PyYAML`, `lgpio`, and the Hailo OCR models. The first
-code reader (grok-fast) runs off the Pi. Hailo OCR on kepler reads the code when
+code reader (Claude Sonnet) runs off the Pi. Hailo OCR on kepler reads the code when
 that reader is down.
 
 ### Deploy (updating the code)
