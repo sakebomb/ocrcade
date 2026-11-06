@@ -23,6 +23,7 @@ import time
 import cv2
 import requests
 
+from game.puzzle_tasks import CAMERA_PUZZLES, task_lines
 from vision import load_config
 from vision.capture import Camera
 from vision.gating import FrameGate
@@ -86,14 +87,14 @@ class ServerUI:
             self._last_thumb = now
 
     def await_card(self) -> None:
-        _post(self.preview_url, {"ocr_lines": ["Show your PUZZLE card",
-                                               "(the Puzzle · Lang marker)"],
-                                 "stability": 0.0, "max_stability": 1.0,
-                                 "source_type": "camera"}, timeout=1)
+        # The display shows its main page (the puzzle list) for this source.
+        _post(self.preview_url, {"ocr_lines": [], "stability": 0.0, "max_stability": 1.0,
+                                 "source_type": "await_card"}, timeout=1)
 
     def puzzle_locked(self, puzzle: int, lang: str) -> None:
-        _post(self.preview_url, {"ocr_lines": [f"PUZZLE {puzzle}", lang.upper(), "GOT IT"],
-                                 "stability": 0.0, "max_stability": 1.0,
+        subtitle = "CAMERA GAME" if puzzle in CAMERA_PUZZLES else lang.upper()
+        lines = [f"PUZZLE {puzzle}", subtitle, *task_lines(puzzle)]
+        _post(self.preview_url, {"ocr_lines": lines, "stability": 0.0, "max_stability": 1.0,
                                  "source_type": "puzzle_seen"}, timeout=1)
 
     def await_code(self, puzzle: int, lang: str, progress: float) -> None:

@@ -56,7 +56,7 @@ markers:
 
 select:
   marker_stable_frames: 2   # consecutive frames a puzzle marker must be seen to select
-  confirm_s: 2              # show "PUZZLE N / GOT IT" this long before "READY YOUR CODE"
+  confirm_s: 5              # show the puzzle's task at least this long; it stays while the card is up
   settle_s: 3               # after the puzzle locks, wait before reading code
   clear_frames: 2           # and the puzzle card must be out of the frame first
   timeout_s: 60             # give up waiting for code, return to "show your card"

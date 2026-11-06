@@ -297,3 +297,18 @@ def test_cooldown_blocks_immediate_rescan():
     assert h.tick() is State.IDLE                          # still cooling down
     h.clock.t = 21.0
     assert h.select(FakeMarker(7, 3, "python")) is State.SELECTED  # past cooldown
+
+
+def test_task_stays_up_while_the_puzzle_card_is_held():
+    reader = FakeReader(_readable("# team: Anael\nx"))
+    h = Harness(reader, confirm_s=2.0, clear_frames=2)
+    assert h.select(FakeMarker(4, 2, "python")) is State.SELECTED
+    h.clock.t = 30.0                           # long past confirm_s, card still up
+    assert h.tick() is State.SELECTED
+    assert h.ui.calls[-1] == ("puzzle_locked", 2, "python")
+    assert not any(c[0] == "await_code" for c in h.ui.calls)
+    h.markers.current = None
+    h.tick()                                   # one missed frame is not the card leaving
+    assert h.ui.calls[-1] == ("puzzle_locked", 2, "python")
+    h.tick()
+    assert h.ui.calls[-1] == ("await_code", 2, "python")

@@ -247,10 +247,15 @@ class Pipeline:
         return self._now() - self._t_state >= self.confirm_s
 
     def _announce(self, progress: float = 0.0) -> None:
-        """Confirm the puzzle first. Ask for code only after that beat."""
+        """Show the puzzle's task while its card is up, for at least confirm_s.
+
+        Ask for code only once the card has left the frame, so players read the
+        task at their own pace.
+        """
         if self._puzzle is None or self._lang is None:
             return
-        if not self._confirmed():
+        card_gone = self._clear_run >= self.clear_frames
+        if not self._confirmed() or not card_gone:
             self.ui.puzzle_locked(self._puzzle, self._lang)
         else:
             self.ui.await_code(self._puzzle, self._lang, progress)
