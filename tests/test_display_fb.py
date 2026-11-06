@@ -61,3 +61,47 @@ def test_wake_falls_back_to_sysfs_when_the_ioctl_is_refused(monkeypatch, tmp_pat
     with open(dev, "wb") as fh:
         wake(fh, blank)
     assert blank.read_text() == "0"
+
+
+def _display_without_framebuffer(monkeypatch, opens):
+    """A Display whose first open failed at boot, without its render thread."""
+    import threading
+    clock = {'now': 100.0}
+    monkeypatch.setattr(display_manager.time, 'monotonic', lambda: clock['now'])
+    monkeypatch.setattr(display_manager, 'open_fb', lambda: opens.pop(0))
+    monkeypatch.setattr(display_manager, 'wake', lambda fb: None)
+    d = display_manager.Display.__new__(display_manager.Display)
+    d._fb, d._fb_paused, d._lock = None, False, threading.Lock()
+    d._fb_retry_at = clock['now']
+    return d, clock
+
+
+def test_blit_opens_the_framebuffer_once_it_becomes_available(monkeypatch, tmp_path):
+    # Boot race on kepler: the service starts before the HDMI driver gives
+    # /dev/fb0 its final permissions, so the first open fails.
+    dev = tmp_path / "fb0"
+    dev.write_bytes(b"")
+    late = open(dev, 'wb')
+    d, clock = _display_without_framebuffer(monkeypatch, [None, late])
+    frame = display_manager.Image.new('RGB', (display_manager.WIDTH, display_manager.HEIGHT))
+
+    clock['now'] += display_manager.FB_RETRY_S
+    d._blit(frame)              # device still refused
+    assert d._fb is None
+    clock['now'] += display_manager.FB_RETRY_S
+    d._blit(frame)              # device ready now
+
+    assert d._fb is late
+    late.close()
+    assert dev.stat().st_size > 0
+
+
+def test_blit_waits_between_framebuffer_retries(monkeypatch):
+    d, clock = _display_without_framebuffer(monkeypatch, [None])
+    frame = display_manager.Image.new('RGB', (display_manager.WIDTH, display_manager.HEIGHT))
+
+    clock['now'] += display_manager.FB_RETRY_S / 2
+    d._blit(frame)              # too soon: must not call open_fb (list would be consumed)
+
+    assert d._fb is None
+    assert d._fb_retry_at == 100.0
