@@ -14,12 +14,11 @@ def test_player_result_submits_only_a_win():
 
 def test_missing_camera_element_does_not_launch(monkeypatch):
     monkeypatch.setattr(runner, "_have_libcamerasrc", lambda: False)
-
-    def launched(*_a, **_k):
-        raise AssertionError("game launched")
-
-    monkeypatch.setattr(runner.subprocess, "run", launched)
+    calls = []
+    monkeypatch.setattr(runner.requests, "post", lambda *_a, **_k: calls.append("pause"))
+    monkeypatch.setattr(runner.subprocess, "run", lambda *_a, **_k: calls.append("game"))
     assert runner.run("http://127.0.0.1:5000/submit") == (False, None)
+    assert calls == []
 
 
 def test_nonzero_exit_is_not_a_score(monkeypatch, tmp_path):

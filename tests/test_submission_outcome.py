@@ -1,6 +1,5 @@
 """A timed-out submission must not score when the worker finishes late."""
 import threading
-import time
 
 import server
 
@@ -52,6 +51,14 @@ def test_late_finish_does_not_score_after_the_watchdog(monkeypatch):
     monkeypatch.setattr(server, "rtb_submit",
                         lambda *a, **_k: submits.append(a) or (True, "ok"))
     progress = []
+    workers = []
+
+    class Capture(threading.Thread):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            workers.append(self)
+
+    monkeypatch.setattr(server.threading, "Thread", Capture)
     monkeypatch.setattr(server.display, "failure", lambda *_a: screens.append("fail"))
     monkeypatch.setattr(server.display, "success", lambda *_a: screens.append("ok"))
     monkeypatch.setattr(server.display, "received", lambda *_a: progress.append("recv"))
@@ -62,7 +69,9 @@ def test_late_finish_does_not_score_after_the_watchdog(monkeypatch):
     assert screens == ["fail"]
     assert submits == []
     release.set()
-    time.sleep(0.3)
+    assert len(workers) == 1
+    workers[0].join(2)
+    assert not workers[0].is_alive()
     assert screens == ["fail"]
     assert submits == []
     assert "exec" not in progress

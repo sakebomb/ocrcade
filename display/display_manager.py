@@ -42,9 +42,9 @@ def unblank(path: Path = FB_BLANK) -> None:
 def wake(fb, path: Path = FB_BLANK) -> None:
     """Unblank through the open framebuffer, then sysfs if that ioctl is refused.
 
-    The exec service runs as the login user. That user can write /dev/fb0, and
-    FBIOBLANK is the same kernel path as the sysfs blank file, which is often
-    root-only.
+    The exec service runs as the login user, who can write /dev/fb0. FBIOBLANK
+    uses the same kernel call as the sysfs blank file. The write is the fallback
+    when that ioctl is refused.
     """
     try:
         fcntl.ioctl(fb, FBIOBLANK, 0)
