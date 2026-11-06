@@ -69,5 +69,9 @@ def test_level2_accepts_the_number_and_rejects_a_longer_one(monkeypatch, tmp_pat
     monkeypatch.setattr(ov, "_read_flag", lambda _n: "FLAG")
     assert ov.validate(2, "2663890") == (
         False, "Expected output not found. Check your math.")
+    assert ov.validate(2, "266389.9")[0] is False
+    assert ov.validate(2, "266389e1")[0] is False
     assert ov.validate(2, "266389")[0] is True
     assert ov.validate(2, "total 266389\n")[0] is True
+    assert ov.validate(2, "266389.0")[0] is True
+    assert ov.validate(2, "266389e0")[0] is True

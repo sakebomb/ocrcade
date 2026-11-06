@@ -199,19 +199,23 @@ class Daemon:
     def _run_fruit_ninja(self, team: str) -> None:
         from challenges import fruit_ninja_runner
         log.info(f"Fruit Ninja challenge: team={team!r}")
-        self.cam.close()  # the game opens its own GStreamer camera
-        try:
-            ok, score = fruit_ninja_runner.run(self.submit_url)
-        finally:
-            for attempt in range(3):
-                try:
-                    self.cam = self._new_camera()
-                    break
-                except Exception as e:
-                    log.warning(f"Camera reopen attempt {attempt + 1}/3 failed: {e}")
-                    time.sleep(1.0)
-            else:
-                raise RuntimeError("camera could not be reopened after Fruit Ninja")
+        # The game takes the camera. Leave it alone when the game cannot start.
+        if not fruit_ninja_runner._have_libcamerasrc():
+            ok, score = False, None
+        else:
+            self.cam.close()  # the game opens its own GStreamer camera
+            try:
+                ok, score = fruit_ninja_runner.run(self.submit_url)
+            finally:
+                for attempt in range(3):
+                    try:
+                        self.cam = self._new_camera()
+                        break
+                    except Exception as e:
+                        log.warning(f"Camera reopen attempt {attempt + 1}/3 failed: {e}")
+                        time.sleep(1.0)
+                else:
+                    raise RuntimeError("camera could not be reopened after Fruit Ninja")
         kind, detail = fruit_ninja_runner.player_result(ok, score)
         if kind == "submit":
             _post(self.submit_url, {"puzzle": 6, "team": team,

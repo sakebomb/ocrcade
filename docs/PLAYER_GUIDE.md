@@ -50,9 +50,11 @@ The camera is excellent at code but, like any reader, can slip on:
 
 ## Camera puzzles 5 & 6 (no code)
 
-- **Puzzle 5 – Konami:** hold the **Puzzle 5** card until the screen says it got it.
-  The prompts start after that. Lowering the card before then cancels it.
-- **Puzzle 6 – Fruit Ninja:** hold the **Puzzle 6** card the same way, then play.
+- **Puzzle 5 – Konami:** keep the **Puzzle 5** card up. The screen says it got
+  the puzzle first, and the prompts start a moment later. Lowering the card
+  before the prompts start cancels the round.
+- **Puzzle 6 – Fruit Ninja:** keep the **Puzzle 6** card up the same way, until
+  the game itself starts.
 - No code and no team line needed — just show the card and play.
 
 ## Troubleshooting

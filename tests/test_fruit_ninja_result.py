@@ -12,6 +12,37 @@ def test_player_result_submits_only_a_win():
     assert "40" in detail
 
 
+def test_missing_element_does_not_drop_the_vision_camera(monkeypatch):
+    import daemon
+
+    closed = []
+
+    class Cam:
+        def close(self):
+            closed.append(True)
+
+    class Box:
+        cam = Cam()
+        submit_url = "http://127.0.0.1:5000/submit"
+        feedback_url = "http://127.0.0.1:5000/feedback"
+
+        def _new_camera(self):
+            raise AssertionError("camera reopen")
+
+    posts = []
+
+    def record(url, payload, timeout=10):
+        posts.append((url, payload))
+
+    monkeypatch.setattr(runner, "_have_libcamerasrc", lambda: False)
+    monkeypatch.setattr(daemon, "_post", record)
+    daemon.Daemon._run_fruit_ninja(Box(), "ANONYMOUS")
+    assert closed == []
+    assert len(posts) == 1
+    assert posts[0][0].endswith("/feedback")
+    assert "did not start" in posts[0][1]["error"]
+
+
 def test_missing_camera_element_does_not_launch(monkeypatch):
     monkeypatch.setattr(runner, "_have_libcamerasrc", lambda: False)
     calls = []
