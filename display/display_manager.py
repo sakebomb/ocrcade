@@ -116,7 +116,7 @@ ATTRACT_LINES = [
     "NO LAPTOPS OR SCREENS",
     "OR ELSE! ;-)",
     "",
-    "[ PUZZLE 0 ]  System Check      0 pts  (test)",
+    "[ PUZZLE 0 ]  System Check      0 pts",
     "[ PUZZLE 1 ]  Boot Sector     100 pts",
     "[ PUZZLE 2 ]  Memory Dump     350 pts",
     "[ PUZZLE 3 ]  Hard Maze       750 pts",
@@ -727,11 +727,11 @@ class Display:
             if y > HEIGHT - _s(120):
                 break
 
-        # Divider + timer
+        # Divider + what to do. No countdown: a failed code read keeps the puzzle
+        # and reads again, so a timer would restart on every retry.
         draw.line([(60, HEIGHT - _s(110)), (WIDTH - 60, HEIGHT - _s(110))], fill=AMBER_DIM, width=2)
-        self._centered_text(draw,
-            f"RESETTING IN {max(0, int(FAIL_RESET - elapsed))}s  —  Write clearer and try again",
-            HEIGHT - _s(85), AMBER_DIM, FONT_SM)
+        self._centered_text(draw, "Hold your code flat and steady, then try again",
+                            HEIGHT - _s(85), AMBER_DIM, FONT_SM)
 
     def _draw_failure(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
         fail_msg = FAIL_MSGS[int(elapsed) % len(FAIL_MSGS)]
