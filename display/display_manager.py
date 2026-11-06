@@ -129,7 +129,7 @@ ATTRACT_LINES = [
     "",
     "TIP: Write ZERO as 0 (with slash), not O (letter)",
     "",
-    ">>> GOOD LUCK, HACKERS! <<<",
+    ">>> SHOW A PUZZLE CARD TO START <<<",
 ]
 
 # Konami sequence symbols shown on the challenge screen
@@ -424,8 +424,9 @@ class Display:
         blink = int(elapsed * 2) % 2 == 0
         self._border(draw, AMBER_DIM)
 
-        line_h = _s(48)
-        y = HEIGHT // 2 - (len(ATTRACT_LINES) * line_h) // 2
+        # Center the list above the bottom strip, which holds the hall-of-fame line.
+        line_h = _s(44)
+        y = (HEIGHT - _s(120)) // 2 - (len(ATTRACT_LINES) * line_h) // 2
         for line in ATTRACT_LINES:
             color = AMBER if line.startswith('>>>') else GREEN
             if line.startswith('>>>') and not blink:
@@ -441,10 +442,7 @@ class Display:
             hof_text = (f"\u2605  {entry['team'].upper()}  solved  "
                         f"{entry['name']}  at {entry['ts']}  \u2605")
             color = AMBER if blink else AMBER_DIM
-            self._centered_text(draw, hof_text, HEIGHT - 80, color, FONT_SM)
-        elif blink:
-            self._centered_text(draw, '[ SHOW A PUZZLE CARD TO START ]',
-                                 HEIGHT - 80, AMBER, FONT_MD)
+            self._centered_text(draw, hof_text, HEIGHT - _s(80), color, FONT_SM)
 
     def _draw_scanning(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
         """Live OCR preview with stability progress bar."""

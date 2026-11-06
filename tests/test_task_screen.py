@@ -68,6 +68,25 @@ def test_task_screen_draws_the_task():
     assert drawn == lines
 
 
+def test_main_page_list_ends_above_the_hall_of_fame_line():
+    d = _display("attract")
+    d._load_solved_log = lambda: [{"team": "anael", "name": "Memory Dump", "ts": "18:02"}]
+    rows = []
+    real = display_manager.Display._centered_text
+
+    def record(self, draw, text, y, *args, **kwargs):
+        rows.append((text, y))
+        return real(self, draw, text, y, *args, **kwargs)
+
+    d._centered_text = record.__get__(d)
+    img = Image.new("RGB", (display_manager.WIDTH, display_manager.HEIGHT), display_manager.DARK)
+    d._draw_attract(ImageDraw.Draw(img), 0.0)
+    *listed, (_, hof_y) = rows
+    last_y = listed[-1][1]
+    assert listed[-1][0] == ">>> SHOW A PUZZLE CARD TO START <<<"
+    assert last_y + display_manager._s(48) <= hof_y
+
+
 def test_daemon_sends_the_task_when_a_card_locks(monkeypatch):
     sent = []
     monkeypatch.setattr(daemon, "_post", lambda url, payload, timeout=5.0: sent.append(payload))
