@@ -8,6 +8,9 @@ venv/
 logs/
 ocrcade-logs/
 solved_log.json
+# Written when the exec server starts and on /reset. The solution stays in memory.
+puzzles/level4/maze_fixed.txt
+puzzles/level4/maze_fixed.txt.tmp
 flags/*.txt
 puzzles/level*/flag*.txt
 teams.json

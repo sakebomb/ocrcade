@@ -22,7 +22,7 @@ from flask import Flask, jsonify, request
 
 from display.display_manager import Display
 from game.maze_generator import generate_maze
-from game.output_validator import set_level4_maze, validate
+from game.output_validator import publish_level4_maze, validate
 from game.rtb_submitter import is_solved
 from game.rtb_submitter import submit as rtb_submit
 from game.sandbox_runner import run as sandbox_run
@@ -31,6 +31,7 @@ from vision import load_config
 
 ROOT        = Path(__file__).resolve().parent
 PUZZLES_DIR = ROOT / "puzzles"
+LEVEL4_MAZE = PUZZLES_DIR / "level4" / "maze_fixed.txt"
 SOLVED_LOG  = ROOT / "solved_log.json"
 
 PUZZLE_NAMES = {1: "Boot Sector", 2: "Memory Dump", 3: "Hard Maze",
@@ -112,7 +113,7 @@ def _append_solved_log(team: str, puzzle: int) -> None:
 
 def _init_level4_maze() -> None:
     maze, solution = generate_maze(15, 15)
-    set_level4_maze(maze, solution)
+    publish_level4_maze(maze, solution, LEVEL4_MAZE)
     log.info(f"Level 4 maze generated, solution length={len(solution)}")
 
 

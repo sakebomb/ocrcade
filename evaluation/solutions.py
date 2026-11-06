@@ -2,8 +2,8 @@
 
 Each is the truth for its samples. They are short enough to copy, and between them they
 cover what goes wrong in handwriting: indentation (2), quotes and nested brackets (1, 2),
-and a long run of look-alike letters (3). Puzzle 4 has none: its maze changes each reset
-(and is not shown to players yet, #17).
+and a long run of look-alike letters (3). Puzzle 4 has none: its maze is written at
+server start and replaced on each reset, so there is no single reference solution.
 """
 from __future__ import annotations
 
