@@ -63,13 +63,14 @@ read-back.)
 | 1 | Code | Print the flag file `/puzzle/flag1.txt`. Beginner. |
 | 2 | Code | Sum the numbers, one per line, in `/puzzle/data.txt`. |
 | 3 | Code | Print the moves (`U/D/L/R`) that walk the fixed maze in `/puzzle/maze_fixed.txt`. |
-| 4 | Code | Walk a 15×15 maze regenerated each time the server starts or resets. |
+| 4 | Code | Print the moves (`U/D/L/R`) that walk the maze in `/puzzle/maze_fixed.txt`. A new maze is written each time the server starts or resets. |
 | 5 | Camera | **Konami code** — perform ↑↑↓↓←→←→BA with on-camera gestures. No code. |
 | 6 | Camera | **Fruit Ninja** — slice fruit with hand motion. No code. |
 
 Each code puzzle has a folder `puzzles/levelN/` on kepler, mounted read-only at
 `/puzzle` inside the sandbox. What it holds differs per puzzle: level 1 the flag file to
-print, level 2 the input data and expected answer, level 3 the maze. The flags the
+print, level 2 the input data and expected answer, level 3 the fixed maze, level 4
+the maze written at server start and on `/reset`. The flags the
 validator awards live in `flags/flagN.txt`; `puzzles/level1/flag1.txt` must match
 `flags/flag1.txt`. Code runs inside
 a locked-down sandbox (`bwrap`, no network, resource limits) so untrusted player

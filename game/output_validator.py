@@ -25,6 +25,23 @@ def set_level4_maze(maze_lines: list[str], solution: str):
     _current_maze_solution = solution
 
 
+def publish_level4_maze(maze_lines: list[str], solution: str, dest: Path) -> None:
+    """Remember the maze the validator checks, and write that same maze for players.
+
+    The solution stays in memory. dest is what the sandbox mounts at
+    /puzzle/maze_fixed.txt and what the display preview reads.
+    """
+    stored = list(maze_lines)
+    text = '\n'.join(stored) + '\n'
+    if solution and solution in text:
+        raise RuntimeError('level 4 solution would be visible to players')
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    temporary = dest.with_name(dest.name + '.tmp')
+    temporary.write_text(text)
+    temporary.replace(dest)
+    set_level4_maze(stored, solution)
+
+
 KONAMI_TOKEN   = 'KONAMI_SOLVED'
 FRUITAGE_TOKEN = 'FRUITAGE_SOLVED'
 
