@@ -14,6 +14,7 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
 
@@ -217,22 +218,48 @@ def health():
 
 # ── Submission pipeline ──────────────────────────────────────────────────────
 
+class Outcome:
+    """One terminal screen per submission. The watchdog and the worker race for it."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._closed = False
+
+    def claim(self, paint: Callable[[], None]) -> bool:
+        """Paint the one terminal screen. A paint that raises does not count."""
+        with self._lock:
+            if self._closed:
+                return False
+            paint()
+            self._closed = True
+            return True
+
+    def paint_if_open(self, paint: Callable[[], None]) -> bool:
+        """Paint a progress screen. A closed outcome keeps its terminal screen."""
+        with self._lock:
+            if self._closed:
+                return False
+            paint()
+            return True
+
+
 def _watchdog(puzzle: int, team: str, lang: str, code: str) -> None:
+    outcome = Outcome()
     inner = threading.Thread(target=_handle_submission,
-                             args=(puzzle, team, lang, code), daemon=True)
+                             args=(puzzle, team, lang, code, outcome), daemon=True)
     inner.start()
     inner.join(timeout=SUBMISSION_WATCHDOG)
     if inner.is_alive():
         log.error(f"Submission hung after {SUBMISSION_WATCHDOG}s — team={team!r} puzzle={puzzle}")
-        display.failure(team, "SYSTEM TIMEOUT – contact operator")
+        outcome.claim(lambda: display.failure(team, "SYSTEM TIMEOUT – contact operator"))
 
 
-def _handle_submission(puzzle: int, team: str, lang: str, code: str) -> None:
+def _handle_submission(puzzle: int, team: str, lang: str, code: str, outcome: Outcome) -> None:
     try:
-        _run_submission(puzzle, team, lang, code)
+        _run_submission(puzzle, team, lang, code, outcome)
     except Exception as e:
         log.exception(f"Unhandled error in submission thread: {e}")
-        display.failure(team, "INTERNAL ERROR – contact operator")
+        outcome.claim(lambda: display.failure(team, "INTERNAL ERROR – contact operator"))
 
 
 def _show_maze_preview(puzzle: int, team: str) -> None:
@@ -244,9 +271,9 @@ def _show_maze_preview(puzzle: int, team: str) -> None:
     display.maze_preview(maze_path.read_text())
 
 
-def _run_submission(puzzle: int, team: str, lang: str, code: str) -> None:
+def _run_submission(puzzle: int, team: str, lang: str, code: str, outcome: Outcome) -> None:
     if code.strip() == _MAZE_PREVIEW_CODE:
-        _show_maze_preview(puzzle, team)
+        outcome.claim(lambda: _show_maze_preview(puzzle, team))
         return
 
     # Atomically claim this (team, puzzle) so two near-simultaneous submissions
@@ -254,48 +281,64 @@ def _run_submission(puzzle: int, team: str, lang: str, code: str) -> None:
     # has no scoring, so it isn't reserved.
     if puzzle != 0 and not _reserve(team, puzzle):
         log.info(f"Team '{team}' already solved / in-flight puzzle {puzzle} – rejecting")
-        display.failure(team, "ALREADY SOLVED – Your team already earned points for this puzzle")
+        outcome.claim(lambda: display.failure(
+            team, "ALREADY SOLVED – Your team already earned points for this puzzle"))
         return
     try:
-        # Camera-challenge puzzles (5/6): token validated directly, no sandbox.
-        if puzzle in (5, 6):
-            success, message = validate(puzzle, code)
-            if success:
-                ok, rtb_msg = rtb_submit(team, puzzle, message)
-                log.info(f"Puzzle {puzzle} RTB submit: {ok} – {rtb_msg}")
-                _append_solved_log(team, puzzle)
-                display.success(team, puzzle)
-            else:
-                display.failure(team, message)
-            return
-
-        display.received(team, puzzle)
-        result = sandbox_run(puzzle, lang, code)
-        if result["busy"]:
-            display.failure(team, "BUSY – another team's code is running, show it again")
-            return
-        if result["oom"]:
-            display.failure(team, "MEMORY LIMIT EXCEEDED – Your code used over 1 GB")
-            return
-        if result["timed_out"]:
-            display.failure(team, "TIME LIMIT EXCEEDED – Your code took too long")
-            return
-
-        display.executing(result["stdout"], result["stderr"])
-        success, message = validate(puzzle, result["stdout"])
-        if success:
-            if puzzle == 0:
-                log.info(f"Test puzzle passed for team '{team}' – no points awarded")
-            else:
-                ok, rtb_msg = rtb_submit(team, puzzle, message)
-                log.info(f"RTB submit result: {ok} – {rtb_msg}")
-                _append_solved_log(team, puzzle)
-            display.success(team, puzzle)
-        else:
-            display.failure(team, message)
+        _finish_submission(puzzle, team, lang, code, outcome)
     finally:
         if puzzle != 0:
             _release(team, puzzle)
+
+
+def _score(puzzle: int, team: str, message: str, outcome: Outcome) -> None:
+    """Score and paint success together, so a timeout cannot land in between."""
+    def finish() -> None:
+        if puzzle == 0:
+            log.info(f"Test puzzle passed for team '{team}' – no points awarded")
+        else:
+            ok, rtb_msg = rtb_submit(team, puzzle, message)
+            log.info(f"RTB submit result: {ok} – {rtb_msg}")
+            _append_solved_log(team, puzzle)
+        display.success(team, puzzle)
+
+    outcome.claim(finish)
+
+
+def _finish_submission(puzzle: int, team: str, lang: str, code: str, outcome: Outcome) -> None:
+    # Camera-challenge puzzles (5/6): token validated directly, no sandbox.
+    if puzzle in (5, 6):
+        success, message = validate(puzzle, code)
+        if success:
+            _score(puzzle, team, message, outcome)
+        else:
+            outcome.claim(lambda: display.failure(team, message))
+        return
+
+    if not outcome.paint_if_open(lambda: display.received(team, puzzle)):
+        return
+    result = sandbox_run(puzzle, lang, code)
+    if result["busy"]:
+        outcome.claim(lambda: display.failure(
+            team, "BUSY – another team's code is running, show it again"))
+        return
+    if result["oom"]:
+        outcome.claim(lambda: display.failure(
+            team, "MEMORY LIMIT EXCEEDED – Your code used over 1 GB"))
+        return
+    if result["timed_out"]:
+        outcome.claim(lambda: display.failure(
+            team, "TIME LIMIT EXCEEDED – Your code took too long"))
+        return
+
+    if not outcome.paint_if_open(
+            lambda: display.executing(result["stdout"], result["stderr"])):
+        return
+    success, message = validate(puzzle, result["stdout"])
+    if success:
+        _score(puzzle, team, message, outcome)
+    else:
+        outcome.claim(lambda: display.failure(team, message))
 
 
 def main() -> None:

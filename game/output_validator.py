@@ -73,11 +73,38 @@ def _validate_level1(stdout: str) -> tuple[bool, str]:
 
 
 # ── Level 2: Sum numbers from data.txt ───────────────────────────────────────
+# A whole number, including a decimal or exponent. The lookarounds stop a match
+# inside a longer token such as 266389.0.1.
+_NUMBER = re.compile(
+    r'(?<![\w.])[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?(?![\w.])'
+)
+
+
+def _contains_number(stdout: str, expected: str) -> bool:
+    """True when a printed number equals expected.
+
+    Compare the value, do not truncate: 266389.9 is not 266389, and 266389.0 is.
+    """
+    if not expected:
+        return False
+    try:
+        target = int(expected)
+    except ValueError:
+        return False
+    for match in _NUMBER.finditer(stdout):
+        try:
+            value = float(match.group())
+        except ValueError:
+            continue
+        if value == target:
+            return True
+    return False
+
+
 def _validate_level2(stdout: str) -> tuple[bool, str]:
     expected_file = PUZZLES_DIR / 'level2' / 'expected.txt'
     expected = expected_file.read_text().strip()
-    # Accept the number anywhere in output
-    if expected in stdout:
+    if _contains_number(stdout, expected):
         return True, _read_flag(2)
     return False, 'Expected output not found. Check your math.'
 

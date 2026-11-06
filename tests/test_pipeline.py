@@ -62,6 +62,9 @@ class FakeUI:
     def await_card(self):
         self.calls.append(("await_card",))
 
+    def puzzle_locked(self, puzzle, lang):
+        self.calls.append(("puzzle_locked", puzzle, lang))
+
     def await_code(self, puzzle, lang, _prog):
         self.calls.append(("await_code", puzzle, lang))
 
@@ -172,9 +175,47 @@ def test_camera_challenge_routes_without_code():
     h = Harness(reader)
     h.markers.current = FakeMarker(13, 5, "python")       # puzzle 5 = Konami
     h.tick()
-    assert h.tick() is State.IDLE                          # ran challenge → idle
+    assert h.tick() is State.SELECTED                      # locked, not started
+    assert h.challenges == []
+    assert h.tick() is State.IDLE                          # still held, confirm_s is 0
     assert h.challenges == [(5, "python")]
     assert h.submits == [] and reader.calls == 0           # no code read for a challenge
+
+
+def test_challenge_starts_only_after_confirmation_while_the_card_is_held():
+    reader = FakeReader(_readable("x"))
+    h = Harness(reader, confirm_s=2.0)
+    assert h.select(FakeMarker(16, 6, "python")) is State.SELECTED
+    h.clock.t = 1.0
+    assert h.tick() is State.SELECTED
+    assert h.challenges == []
+    h.clock.t = 2.0
+    assert h.tick() is State.IDLE
+    assert h.challenges == [(6, "python")]
+    assert reader.calls == 0
+
+
+def test_a_stray_frame_on_a_camera_puzzle_does_not_ask_for_code():
+    reader = FakeReader(_readable("x"))
+    h = Harness(reader, confirm_s=2.0)
+    assert h.select(FakeMarker(16, 6, "python")) is State.SELECTED
+    h.clock.t = 2.0
+    h.markers.current = FakeMarker(1, 1, "python")
+    assert h.tick() is State.SELECTED
+    assert h.challenges == []
+    assert ("await_code", 6, "python") not in h.ui.calls
+    assert h.ui.calls[-1][0] == "puzzle_locked"
+
+
+def test_challenge_does_not_start_if_the_card_leaves():
+    reader = FakeReader(_readable("x"))
+    h = Harness(reader, confirm_s=2.0)
+    assert h.select(FakeMarker(16, 6, "python")) is State.SELECTED
+    h.markers.current = None
+    h.clock.t = 2.0
+    assert h.tick() is State.IDLE
+    assert h.challenges == []
+    assert reader.calls == 0
 
 
 def test_marker_must_be_stable_n_frames():
@@ -183,11 +224,66 @@ def test_marker_must_be_stable_n_frames():
     assert h.tick() is State.SELECTED                      # 3rd consecutive
 
 
+def test_confirmation_holds_before_ready_your_code():
+    reader = FakeReader(_readable("# team: Anael\nx"))
+    h = Harness(reader, confirm_s=2.0, settle_s=3.0, clear_frames=1)
+    assert h.select(FakeMarker(1, 1, "python")) is State.SELECTED
+    assert h.ui.calls[-1] == ("puzzle_locked", 1, "python")
+    h.markers.current = None
+    h.gate.fire_next = True
+    h.clock.t = 1.0
+    assert h.tick() is State.SELECTED
+    assert reader.calls == 0
+    assert not any(c[0] == "await_code" for c in h.ui.calls)
+    h.clock.t = 2.0
+    h.gate.fire_next = True
+    assert h.tick() is State.SELECTED          # "ready" is up, settle is not done
+    assert reader.calls == 0
+    assert h.ui.calls[-1] == ("await_code", 1, "python")
+    h.clock.t = 3.0
+    h.gate.fire_next = True
+    assert h.tick() is State.READBACK
+
+
+def test_code_read_waits_for_the_puzzle_card_to_leave_and_settle():
+    reader = FakeReader(_readable("# team: Anael\nx"))
+    h = Harness(reader, settle_s=3.0, clear_frames=2)
+    assert h.select(FakeMarker(4, 2, "python")) is State.SELECTED
+    h.markers.current = FakeMarker(4, 2, "python")
+    h.gate.fire_next = True
+    h.clock.t = 5.0
+    assert h.tick() is State.SELECTED
+    assert reader.calls == 0
+    h.markers.current = None
+    h.gate.fire_next = True
+    assert h.tick() is State.SELECTED          # one clear frame is not enough
+    h.gate.fire_next = True
+    assert h.tick() is State.READBACK
+
+
+def test_one_stray_frame_does_not_replace_the_locked_puzzle():
+    reader = FakeReader(_readable("# team: Anael\nx"))
+    h = Harness(reader)
+    h.select(FakeMarker(1, 1, "python"))
+    h.markers.current = FakeMarker(16, 6, "python")       # one frame looks like Fruit Ninja
+    assert h.tick() is State.SELECTED
+    assert h.challenges == []
+    assert (h.p._puzzle, h.p._lang) == (1, "python")
+    assert h.tick() is State.SELECTED                     # second frame locks puzzle 6
+    assert h.challenges == []
+    assert (h.p._puzzle, h.p._lang) == (6, "python")
+    assert h.tick() is State.IDLE                         # still held, so the game starts
+    assert h.challenges == [(6, "python")]
+    assert reader.calls == 0
+
+
 def test_different_marker_reselects():
     h = Harness(FakeReader(_readable("# team: Anael\nx")))
     h.select(FakeMarker(4, 2, "python"))
     assert (h.p._puzzle, h.p._lang) == (2, "python")
     h.markers.current = FakeMarker(7, 3, "python")         # different card mid-select
+    h.tick()
+    assert (h.p._puzzle, h.p._lang) == (2, "python")       # one frame is not enough
     h.tick()
     assert (h.p._puzzle, h.p._lang) == (3, "python")
 

@@ -1,6 +1,6 @@
 """OCRcade capture pipeline — the ArUco-model state machine.
 
-    IDLE     ── stable puzzle marker ──▶ SELECTED   (puzzle 5/6 ▶ run challenge)
+    IDLE     ── stable puzzle marker ──▶ SELECTED   (puzzle 5/6 wait, then challenge)
     SELECTED ── gate fires on code ────▶ READBACK   (VLM read code + roster team)
     READBACK ── confirm GO ───────────▶ submit ▶ IDLE
              ── cancel / timeout ─────▶ IDLE
@@ -35,6 +35,7 @@ class UI(Protocol):
     """Display surface (daemon posts these to the exec/display server)."""
     def thumb(self, frame) -> None: ...
     def await_card(self) -> None: ...
+    def puzzle_locked(self, puzzle: int, lang: str) -> None: ...
     def await_code(self, puzzle: int, lang: str, progress: float) -> None: ...
     def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None: ...
     def feedback(self, title: str, detail: str) -> None: ...
@@ -68,7 +69,8 @@ class Pipeline:
                  challenge: Callable[[int, str], None],
                  marker_stable_frames: int = 2, roster_cutoff: float = 0.6,
                  select_timeout_s: float = 60.0, readback_timeout_s: float = 30.0,
-                 cooldown_s: float = 20.0, now: Callable[[], float] = time.monotonic):
+                 cooldown_s: float = 20.0, settle_s: float = 0.0, clear_frames: int = 1,
+                 confirm_s: float = 0.0, now: Callable[[], float] = time.monotonic):
         self.markers = markers
         self.gate = gate
         self.reader = reader
@@ -82,6 +84,9 @@ class Pipeline:
         self.select_timeout_s = select_timeout_s
         self.readback_timeout_s = readback_timeout_s
         self.cooldown_s = cooldown_s
+        self.settle_s = settle_s
+        self.clear_frames = clear_frames
+        self.confirm_s = confirm_s
         self._now = now
 
         self.state = State.IDLE
@@ -90,6 +95,9 @@ class Pipeline:
         self._sel_marker_id: int | None = None
         self._marker_run_id: int | None = None
         self._marker_run = 0
+        self._clear_run = 0
+        self._stray_id: int | None = None
+        self._stray_run = 0
         self._t_state = 0.0
         self._cooldown_until = 0.0
         self._pending: CardReading | None = None
@@ -115,19 +123,38 @@ class Pipeline:
         self._select(m)
 
     def _tick_selected(self, lores, grab_main) -> None:
-        # a different puzzle card in view → switch puzzles
+        # A different card replaces this one only after it holds still. One bad
+        # frame used to launch Fruit Ninja while the player was showing puzzle 1.
         m = self.markers.pick(lores)
         if m is not None and m.marker_id != self._sel_marker_id:
-            self._select_reset()
-            self._select(m)
+            if self._stray_held(m):
+                self._select_reset()
+                self._select(m)
+            else:
+                self.gate.reset()
+                # A camera puzzle never asks for code. One bad frame must not
+                # flash "READY YOUR CODE" after the confirmation beat.
+                if self._puzzle in (5, 6):
+                    self.ui.puzzle_locked(self._puzzle, self._lang)
+                else:
+                    self._announce()
             return
+        self._stray_id = None
+        self._stray_run = 0
         if self._now() - self._t_state > self.select_timeout_s:
             log.info("SELECTED timeout → IDLE")
             self._to_idle()
             return
+        if self._puzzle in (5, 6):
+            self._tick_challenge(m)
+            return
+        if not self._ready_for_code(m):
+            self.gate.reset()
+            self._announce()
+            return
         fired = self.gate.update(lores)
-        if self.gate.last.get("has_text"):
-            self.ui.await_code(self._puzzle, self._lang, self.gate.last.get("progress", 0.0))
+        progress = self.gate.last.get("progress", 0.0) if self.gate.last.get("has_text") else 0.0
+        self._announce(progress)
         if fired:
             self._read(grab_main())
 
@@ -141,18 +168,32 @@ class Pipeline:
 
     # --- transitions ---
     def _select(self, m) -> None:
-        if m.puzzle in (5, 6):
-            log.info(f"camera-challenge marker → puzzle {m.puzzle}")
-            self.challenge(m.puzzle, m.lang)      # daemon owns camera handoff + team
-            self._cooldown()
-            self._to_idle()
-            return
         self._puzzle, self._lang, self._sel_marker_id = m.puzzle, m.lang, m.marker_id
         self.state = State.SELECTED
         self._t_state = self._now()
+        self._clear_run = 0
         self.gate.reset()
         log.info(f"SELECTED puzzle={m.puzzle} lang={m.lang} (marker {m.marker_id})")
-        self.ui.await_code(m.puzzle, m.lang, 0.0)
+        self.ui.puzzle_locked(m.puzzle, m.lang)
+
+    def _tick_challenge(self, marker) -> None:
+        """Puzzle 5/6 start only after the confirmation, and only if that card is still up."""
+        held = marker is not None and marker.marker_id == self._sel_marker_id
+        if not held:
+            self._clear_run += 1
+            self.ui.puzzle_locked(self._puzzle, self._lang)
+            if self._clear_run >= self.clear_frames:
+                log.info("challenge card left before start → IDLE")
+                self._to_idle()
+            return
+        self._clear_run = 0
+        if not self._confirmed():
+            self.ui.puzzle_locked(self._puzzle, self._lang)
+            return
+        log.info(f"camera-challenge marker {self._sel_marker_id} → puzzle {self._puzzle}")
+        self.challenge(self._puzzle, self._lang)
+        self._cooldown()
+        self._to_idle()
 
     def _read(self, main) -> None:
         r = self.reader.read_code(main)
@@ -193,9 +234,44 @@ class Pipeline:
             self._marker_run = 1 if mid is not None else 0
         return m if (m is not None and self._marker_run >= self.marker_stable_frames) else None
 
+    def _stray_held(self, marker) -> bool:
+        if marker.marker_id == self._stray_id:
+            self._stray_run += 1
+        else:
+            self._stray_id = marker.marker_id
+            self._stray_run = 1
+        return self._stray_run >= self.marker_stable_frames
+
+    def _confirmed(self) -> bool:
+        """The "got it" screen has been up long enough to read."""
+        return self._now() - self._t_state >= self.confirm_s
+
+    def _announce(self, progress: float = 0.0) -> None:
+        """Confirm the puzzle first. Ask for code only after that beat."""
+        if self._puzzle is None or self._lang is None:
+            return
+        if not self._confirmed():
+            self.ui.puzzle_locked(self._puzzle, self._lang)
+        else:
+            self.ui.await_code(self._puzzle, self._lang, progress)
+
+    def _ready_for_code(self, marker) -> bool:
+        """The puzzle card is not the code. Confirm it, wait it out, then settle."""
+        if marker is not None and marker.marker_id == self._sel_marker_id:
+            self._clear_run = 0
+            return False
+        self._clear_run += 1
+        if self._clear_run < self.clear_frames:
+            return False
+        elapsed = self._now() - self._t_state
+        return elapsed >= self.settle_s and elapsed >= self.confirm_s
+
     def _select_reset(self) -> None:
         self._marker_run_id = None
         self._marker_run = 0
+        self._clear_run = 0
+        self._stray_id = None
+        self._stray_run = 0
 
     def _to_idle(self) -> None:
         self.state = State.IDLE

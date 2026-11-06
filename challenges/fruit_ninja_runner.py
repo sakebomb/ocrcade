@@ -31,9 +31,32 @@ _OP_HEADERS = {'X-Operator-Token': _OP_TOKEN} if _OP_TOKEN else None
 SCORE_THRESHOLD = 100   # pts required to win (≈10 fruits sliced)
 GAME_TIMEOUT    = 210   # max wait: 60s game + countdown + game-over + startup slack
 GAME_SCRIPT     = Path(__file__).resolve().parent / 'fruit_ninja_game.py'
+SOLVED_CODE     = 'FRUITAGE_SOLVED'
 
 
-def run(exec_pi_url: str) -> tuple[bool, int]:
+def _have_libcamerasrc() -> bool:
+    """The pose pipeline needs this GStreamer element. It is not part of the base OS."""
+    try:
+        import gi
+        gi.require_version('Gst', '1.0')
+        from gi.repository import Gst
+        Gst.init(None)
+        return Gst.ElementFactory.find('libcamerasrc') is not None
+    except Exception as e:
+        log.error(f"Fruit Ninja camera check failed: {e}")
+        return False
+
+
+def player_result(ok: bool, score: int | None) -> tuple[str, str]:
+    """What the daemon should post. A crash is not a score and must not be submitted."""
+    if ok:
+        return 'submit', SOLVED_CODE
+    if score is None:
+        return 'feedback', 'Fruit Ninja did not start'
+    return 'feedback', f'Score {score}. Need {SCORE_THRESHOLD}.'
+
+
+def run(exec_pi_url: str) -> tuple[bool, int | None]:
     """
     Run the Fruit Ninja challenge.
 
@@ -44,11 +67,18 @@ def run(exec_pi_url: str) -> tuple[bool, int]:
         exec_pi_url: full submit URL, e.g. http://127.0.0.1:5000/submit
 
     Returns:
-        (success, score)  — success is True when score >= SCORE_THRESHOLD
+        (success, score). score is None when the game never finished. success is
+        True only when a finished game scored at least SCORE_THRESHOLD.
     """
+    if not _have_libcamerasrc():
+        log.error("Fruit Ninja needs GStreamer element libcamerasrc "
+                  "(package gstreamer1.0-libcamera)")
+        return False, None
+
     base_url = exec_pi_url.replace('/submit', '')
     result_path = Path(tempfile.mktemp(suffix='_fn_result.json'))
-    score = 0
+    score: int | None = None
+    exit_code: int | None = None
 
     # Pause the OCRcade display — shows "FRUIT NINJA CHALLENGE" then freezes fb0
     try:
@@ -64,7 +94,8 @@ def run(exec_pi_url: str) -> tuple[bool, int]:
              '--result-file', str(result_path)],
             timeout=GAME_TIMEOUT,
         )
-        log.info(f"Fruit Ninja exited with code {proc.returncode}")
+        exit_code = proc.returncode
+        log.info(f"Fruit Ninja exited with code {exit_code}")
 
         if result_path.exists():
             data = json.loads(result_path.read_text())
@@ -87,4 +118,6 @@ def run(exec_pi_url: str) -> tuple[bool, int]:
         except requests.RequestException as e:
             log.warning(f"Could not resume display: {e}")
 
+    if exit_code != 0 or score is None:
+        return False, None
     return score >= SCORE_THRESHOLD, score

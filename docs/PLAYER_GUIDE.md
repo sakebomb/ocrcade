@@ -19,11 +19,11 @@ it, runs it, and scores your team. Here's how to get read right the first time.
 1. **Pick the Puzzle·Lang card.** There's a printed card for each puzzle and
    language (e.g. **"PUZZLE 2 · PYTHON"**, with a black-and-white marker on it).
    Grab the one that matches what you're solving.
-2. **Show that card to the camera.** The screen confirms: *"Puzzle 2 · Python —
-   show your code."* (The marker is read instantly and exactly — no guessing your
-   puzzle or language.)
-3. **Show your code.** Put your code (laptop screen or paper) squarely in the
-   camera's view. When it's sharp and still, the read fires.
+2. **Show that card to the camera.** The screen confirms the puzzle it saw
+   (*"PUZZLE 2 / PYTHON / GOT IT"*), then says *"READY YOUR CODE"*. The marker is
+   read exactly — no guessing your puzzle or language.
+3. **Show your code** once the screen says ready. Put your code (laptop screen or
+   paper) squarely in the camera's view. When it's sharp and still, the read fires.
 4. **Check the read-back.** The screen shows the **code it read** and the **team it
    matched**. Look it over:
    - **Right?** Press the **GO button** to submit.
@@ -50,8 +50,11 @@ The camera is excellent at code but, like any reader, can slip on:
 
 ## Camera puzzles 5 & 6 (no code)
 
-- **Puzzle 5 – Konami:** show the **Puzzle 5** card, then follow the on-camera prompts.
-- **Puzzle 6 – Fruit Ninja:** show the **Puzzle 6** card, then play with the camera.
+- **Puzzle 5 – Konami:** keep the **Puzzle 5** card up. The screen says it got
+  the puzzle first, and the prompts start a moment later. Lowering the card
+  before the prompts start cancels the round.
+- **Puzzle 6 – Fruit Ninja:** keep the **Puzzle 6** card up the same way, until
+  the game itself starts.
 - No code and no team line needed — just show the card and play.
 
 ## Troubleshooting

@@ -9,6 +9,7 @@ State machine: ATTRACT → RECEIVED → EXECUTING → SUCCESS/FAIL → ATTRACT
 """
 
 import base64
+import fcntl
 import json
 import logging
 import math
@@ -24,7 +25,48 @@ from PIL import Image, ImageDraw, ImageFont
 log = logging.getLogger('ocrcade.display')
 
 # ── Display geometry ────────────────────────────────────────────────────────────
-FB_DEV  = '/dev/fb0'
+FB_DEV   = '/dev/fb0'
+FB_BLANK = Path('/sys/class/graphics/fb0/blank')
+FB_RETRY_S = 2.0
+FBIOBLANK = 0x4611  # linux/fb.h — arg 0 is FB_BLANK_UNBLANK
+
+
+def unblank(path: Path = FB_BLANK) -> None:
+    """Wake a monitor that slept because the framebuffer was powered down."""
+    try:
+        path.write_text('0')
+    except OSError as e:
+        log.warning(f"could not unblank {path}: {e}")
+
+
+def wake(fb, path: Path = FB_BLANK) -> None:
+    """Unblank through the open framebuffer, then sysfs if that ioctl is refused.
+
+    The exec service runs as the login user, who can write /dev/fb0. FBIOBLANK
+    uses the same kernel call as the sysfs blank file. The write is the fallback
+    when that ioctl is refused.
+    """
+    try:
+        fcntl.ioctl(fb, FBIOBLANK, 0)
+        return
+    except OSError as e:
+        log.warning(f"framebuffer unblank ioctl failed: {e}")
+    unblank(path)
+
+
+def open_fb(dev: str = FB_DEV):
+    """Open the framebuffer, or None when it does not exist yet.
+
+    No O_CREAT: open(..., 'wb') would create a regular file when the parent
+    directory is writable, and writing a picture into that file does not wake
+    the monitor. O_CLOEXEC matches open(), so a sandbox child does not inherit
+    the display.
+    """
+    try:
+        fd = os.open(dev, os.O_WRONLY | os.O_CLOEXEC)
+    except OSError:
+        return None
+    return os.fdopen(fd, 'wb')
 
 
 def _read_fb_geometry() -> tuple[int, int, int]:
@@ -121,6 +163,7 @@ _FONT_PATHS_BOLD = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf',
 ]
 
+FONT_XL = _find_font(_FONT_PATHS_BOLD, _s(120))
 FONT_LG = _find_font(_FONT_PATHS_BOLD, _s(56))
 FONT_MD = _find_font(_FONT_PATHS,      _s(36))
 FONT_SM = _find_font(_FONT_PATHS,      _s(24))
@@ -172,11 +215,12 @@ class Display:
         self._thumb_b64     = ''    # latest camera thumbnail from Vision Pi
         self._fb_paused     = False # True while Fruit Ninja owns the framebuffer
         self._lock          = threading.Lock()
-        try:
-            self._fb        = open(FB_DEV, 'wb')
-        except OSError as e:
-            self._fb        = None   # no framebuffer (dev/CI) — render loop no-ops
-            log.warning(f"No framebuffer at {FB_DEV} ({e}) — display disabled")
+        self._fb            = open_fb()
+        self._fb_retry_at   = time.monotonic()
+        if self._fb is None:
+            log.warning(f"No framebuffer at {FB_DEV} — display retries until it appears")
+        else:
+            wake(self._fb)
         self._thread        = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -235,6 +279,12 @@ class Display:
 
     def fruitage_end(self):
         """Resume fb0 writes after Fruit Ninja exits."""
+        with self._lock:
+            fb = self._fb
+        if fb is not None:
+            wake(fb)
+        else:
+            unblank()
         with self._lock:
             self._fb_paused = False
         self._set('attract', {})
@@ -326,10 +376,24 @@ class Display:
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
+    def _reopen_fb(self) -> None:
+        now = time.monotonic()
+        if now - self._fb_retry_at < FB_RETRY_S:
+            return
+        self._fb_retry_at = now
+        fb = open_fb()
+        if fb is None:
+            return
+        self._fb = fb
+        wake(fb)
+        log.info(f"framebuffer open at {FB_DEV}")
+
     def _blit(self, img: Image.Image):
         with self._lock:
             if self._fb_paused:
                 return
+        if self._fb is None:
+            self._reopen_fb()
         if self._fb is None:
             return
         data = _to_framebuffer(img)
@@ -375,6 +439,13 @@ class Display:
 
     def _draw_scanning(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
         """Live OCR preview with stability progress bar."""
+        source = data.get('source_type', '')
+        if source == 'puzzle_seen':
+            self._draw_cue(draw, data, GREEN)
+            return
+        if source == 'ready_code':
+            self._draw_cue(draw, data, AMBER)
+            return
         self._border(draw, CYAN)
 
         spinner = ['|', '/', '-', '\\'][int(elapsed * 6) % 4]
@@ -417,6 +488,23 @@ class Display:
 
         label = f'{stability:.1f}s / {max_stability:.1f}s — hold steady'
         self._centered_text(draw, label, HEIGHT - _s(68), AMBER_DIM, FONT_SM)
+
+    def _draw_cue(self, draw: ImageDraw.ImageDraw, data: dict, color: tuple):
+        """Full-screen beat: the puzzle confirmation, then "ready your code"."""
+        self._border(draw, color)
+        lines = [str(ln) for ln in data.get('ocr_lines', []) if str(ln).strip()][:3]
+        fonts = (FONT_XL, FONT_LG, FONT_MD)
+        fills = (AMBER, WHITE, GREEN)
+        gap = _s(36)
+        heights = []
+        for i, line in enumerate(lines):
+            bbox = draw.textbbox((0, 0), line, font=fonts[i])
+            heights.append(bbox[3] - bbox[1])
+        total = sum(heights) + gap * max(len(lines) - 1, 0)
+        y = (HEIGHT - total) // 2
+        for i, line in enumerate(lines):
+            self._centered_text(draw, line, y, fills[i], fonts[i])
+            y += heights[i] + gap
 
     def _draw_received(self, draw: ImageDraw.ImageDraw, data: dict):
         self._border(draw, CYAN)
