@@ -243,8 +243,17 @@ class Display:
 
     def preview(self, ocr_lines: list[str], stability: float, max_stability: float,
                 source_type: str = 'unknown'):
-        """Vision Pi is scanning — show live OCR preview with stability bar."""
+        """Vision Pi is scanning — show live OCR preview with stability bar.
+
+        While it waits for a puzzle card (source 'await_card') the main page shows.
+        """
         with self._lock:
+            if source_type == 'await_card':
+                if self._state == 'scanning':
+                    self._state = 'attract'
+                    self._state_data = {}
+                    self._state_entered = time.time()
+                return
             if self._state in ('attract', 'scanning'):
                 if self._state != 'scanning':
                     self._state = 'scanning'
@@ -434,14 +443,14 @@ class Display:
             color = AMBER if blink else AMBER_DIM
             self._centered_text(draw, hof_text, HEIGHT - 80, color, FONT_SM)
         elif blink:
-            self._centered_text(draw, '[ PLACE PAPER UNDER CAMERA ]',
+            self._centered_text(draw, '[ SHOW A PUZZLE CARD TO START ]',
                                  HEIGHT - 80, AMBER, FONT_MD)
 
     def _draw_scanning(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
         """Live OCR preview with stability progress bar."""
         source = data.get('source_type', '')
         if source == 'puzzle_seen':
-            self._draw_cue(draw, data, GREEN)
+            self._draw_task(draw, data, elapsed)
             return
         if source == 'ready_code':
             self._draw_cue(draw, data, AMBER)
@@ -488,6 +497,25 @@ class Display:
 
         label = f'{stability:.1f}s / {max_stability:.1f}s — hold steady'
         self._centered_text(draw, label, HEIGHT - _s(68), AMBER_DIM, FONT_SM)
+
+    def _draw_task(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
+        """The scanned puzzle and its task. The last line says what to do next."""
+        self._border(draw, GREEN)
+        lines = [str(ln) for ln in data.get('ocr_lines', [])]
+        if len(lines) < 3:
+            self._draw_cue(draw, data, GREEN)
+            return
+        title, subtitle, *task, hint = lines
+        y = _s(140)
+        self._centered_text(draw, title, y, AMBER, FONT_XL)
+        y += _s(170)
+        self._centered_text(draw, subtitle, y, WHITE, FONT_LG)
+        y += _s(130)
+        for line in task:
+            self._centered_text(draw, line, y, GREEN, FONT_MD)
+            y += _s(56)
+        blink = int(elapsed * 2) % 2 == 0
+        self._centered_text(draw, hint, HEIGHT - _s(140), AMBER if blink else AMBER_DIM, FONT_MD)
 
     def _draw_cue(self, draw: ImageDraw.ImageDraw, data: dict, color: tuple):
         """Full-screen beat: the puzzle confirmation, then "ready your code"."""
