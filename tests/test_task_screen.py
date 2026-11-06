@@ -87,6 +87,31 @@ def test_main_page_list_ends_above_the_hall_of_fame_line():
     assert last_y + display_manager._s(48) <= hof_y
 
 
+def test_main_page_puzzle_rows_line_up():
+    rows = [line for line in display_manager.ATTRACT_LINES if line.startswith("[ PUZZLE")]
+    assert len(rows) == 7
+    assert len({len(row) for row in rows}) == 1
+
+
+def test_read_error_screen_has_no_reset_countdown():
+    # A failed read keeps the puzzle and reads again; a countdown restarted on
+    # every retry (5 4 3 5 4 3 ...).
+    d = _display("parse_error")
+    drawn = []
+    real = display_manager.Display._centered_text
+
+    def record(self, draw, text, *args, **kwargs):
+        drawn.append(text)
+        return real(self, draw, text, *args, **kwargs)
+
+    d._centered_text = record.__get__(d)
+    img = Image.new("RGB", (display_manager.WIDTH, display_manager.HEIGHT), display_manager.DARK)
+    data = {"message": "no text found", "ocr_lines": ["CARD NOT READ", "no text found"]}
+    d._draw_parse_error(ImageDraw.Draw(img), data, 2.0)
+    assert not any("RESETTING" in text or "IN 3s" in text for text in drawn)
+    assert any("try again" in text.lower() for text in drawn)
+
+
 def test_daemon_sends_the_task_when_a_card_locks(monkeypatch):
     sent = []
     monkeypatch.setattr(daemon, "_post", lambda url, payload, timeout=5.0: sent.append(payload))
