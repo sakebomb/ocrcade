@@ -59,6 +59,26 @@ def _puzzle_data_dir(puzzle: int) -> Path:
     return PUZZLES_DIR / f'level{puzzle}'
 
 
+# Files a player's program may read at /puzzle. Anything else in the level folder
+# stays on the host for the validator. Level 2's expected.txt is the answer.
+_PLAYER_FILES: dict[int, tuple[str, ...]] = {
+    1: ('flag1.txt',),
+    2: ('data.txt',),
+    3: ('maze_fixed.txt',),
+    4: ('maze_fixed.txt',),
+}
+
+
+def _stage_player_files(puzzle: int, data_dir: Path, dest: Path) -> Path:
+    """Copy the player files into dest. The level directory itself is not mounted."""
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in _PLAYER_FILES.get(puzzle, ()):
+        src = data_dir / name
+        if src.is_file():
+            shutil.copyfile(src, dest / name)
+    return dest
+
+
 _slot = threading.Lock()
 _cgroup: RunCgroup | None = None
 _cgroup_lock = threading.Lock()
@@ -136,23 +156,24 @@ def _execute(puzzle: int, lang: str, code: str, workdir: str) -> dict:
     if not data_dir.exists():
         log.error(f"No puzzle data dir for puzzle {puzzle}: {data_dir}")
         return _err(f'No data for puzzle {puzzle} – contact operator')
+    view = _stage_player_files(puzzle, data_dir, Path(workdir, 'puzzle-view'))
 
     if lang == 'python':
         Path(workdir, 'solution.py').write_text(code)
-        cmd = _build_cmd(['python3', '/sandbox/solution.py'], workdir, data_dir)
+        cmd = _build_cmd(['python3', '/sandbox/solution.py'], workdir, view)
 
     elif lang == 'bash':
         sh = Path(workdir, 'solution.sh')
         sh.write_text('#!/bin/bash\n' + code)
         sh.chmod(0o755)
-        cmd = _build_cmd(['bash', '/sandbox/solution.sh'], workdir, data_dir)
+        cmd = _build_cmd(['bash', '/sandbox/solution.sh'], workdir, view)
 
     elif lang == 'cpp':
         Path(workdir, 'solution.cpp').write_text(code)
         # Compile INSIDE the sandbox (no host fs / no #include read-oracle).
         compile_cmd = _build_cmd(
             ['g++', '-O2', '-o', '/sandbox/solution', '/sandbox/solution.cpp'],
-            workdir, data_dir=None)
+            workdir, None)
         cr, oom = _confined(compile_cmd, COMPILE_TIMEOUT)
         if oom:
             return _result(stderr='COMPILE MEMORY LIMIT EXCEEDED', exit_code=-1, oom=True)
@@ -161,7 +182,7 @@ def _execute(puzzle: int, lang: str, code: str, workdir: str) -> dict:
                            timed_out=True)
         if cr.returncode != 0:
             return _err(f'COMPILE ERROR:\n{cr.stderr}', cr.returncode)
-        cmd = _build_cmd(['/sandbox/solution'], workdir, data_dir)
+        cmd = _build_cmd(['/sandbox/solution'], workdir, view)
 
     else:
         return _err(f'Unsupported language: {lang}')
@@ -179,10 +200,11 @@ def _execute(puzzle: int, lang: str, code: str, workdir: str) -> dict:
     return _result(stdout=proc.stdout, stderr=proc.stderr, exit_code=proc.returncode)
 
 
-def _build_cmd(inner_cmd: list, workdir: str, data_dir: Path | None) -> list:
+def _build_cmd(inner_cmd: list, workdir: str, puzzle_mount: Path | None) -> list:
     """Build a hardened bwrap command wrapping inner_cmd.
 
-    data_dir=None for the compile step (no puzzle data mounted).
+    puzzle_mount=None for the compile step (no puzzle data mounted). The
+    directory is the staged player view, never the raw level folder.
     """
     cmd = [
         BWRAP,
@@ -196,8 +218,8 @@ def _build_cmd(inner_cmd: list, workdir: str, data_dir: Path | None) -> list:
             cmd += ['--ro-bind', path, path]
     cmd += ['--tmpfs', '/tmp', '--proc', '/proc', '--dev', '/dev',
             '--bind', workdir, '/sandbox']
-    if data_dir is not None:
-        cmd += ['--ro-bind', str(data_dir), '/puzzle']
+    if puzzle_mount is not None:
+        cmd += ['--ro-bind', str(puzzle_mount), '/puzzle']
     cmd += ['--chdir', '/sandbox', '--',
             '/bin/sh', '-c', _ULIMIT_PREAMBLE, 'sh'] + list(inner_cmd)
     return cmd

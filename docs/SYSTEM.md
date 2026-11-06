@@ -67,9 +67,10 @@ read-back.)
 | 5 | Camera | **Konami code** — perform ↑↑↓↓←→←→BA with on-camera gestures. No code. |
 | 6 | Camera | **Fruit Ninja** — slice fruit with hand motion. No code. |
 
-Each code puzzle has a folder `puzzles/levelN/` on kepler, mounted read-only at
-`/puzzle` inside the sandbox. What it holds differs per puzzle: level 1 the flag file to
-print, level 2 the input data and expected answer, level 3 the maze. The flags the
+Each code puzzle has a folder `puzzles/levelN/` on kepler. The sandbox mounts a
+read-only copy of the player files from that folder at `/puzzle`. What the player
+can read differs per puzzle: level 1 the flag file to print, level 2 the input
+data, level 3 the maze. Level 2's expected answer stays on the host. The flags the
 validator awards live in `flags/flagN.txt`; `puzzles/level1/flag1.txt` must match
 `flags/flag1.txt`. Code runs inside
 a locked-down sandbox (`bwrap`, no network, resource limits) so untrusted player
