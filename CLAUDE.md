@@ -7,9 +7,11 @@ shows the result on a monitor. Every puzzle is a path to its flag. The operator 
 
 ## Current direction
 
-- **Code readers are grok-fast, then Hailo OCR.** `vlm.code_readers` tries LiteLLM
-  (`grok-fast`) first and `hailo_ocr` (PaddleOCR on the Hailo-10H) when that reader is
-  down, slow, rate-limited, or over budget. The Hailo Qwen2-VL-2B is not a code reader:
+- **Code readers are Claude Sonnet, then Hailo OCR.** `vlm.code_readers` tries LiteLLM
+  (`claude-sonnet-5-5`) first and `hailo_ocr` (PaddleOCR on the Hailo-10H) when that
+  reader is down, slow, rate-limited, or over budget. Claude declines an emphatic
+  "transcribe EXACTLY" prompt (`content_filter`, no text); test any prompt change against
+  it on kepler. The Hailo Qwen2-VL-2B is not a code reader:
   at its fixed 336x336 input it only reads the puzzle number. Ollama is an optional reader.
 - **Handwriting is the main accuracy goal.** Measure it with a labelled set of photos before
   tuning anything; the gate thresholds were validated on screen cards only (light text on a

@@ -20,7 +20,7 @@ The player shows a printed puzzle card, then their code. The Pi reads the code, 
 
 | Order | Reader | Where it runs |
 |-------|--------|----------------|
-| 1 | `litellm` (`grok-fast`) | Off the Pi. The URL and key come from the environment variables named in `config.yaml`. |
+| 1 | `litellm` (`claude-sonnet-5-5`) | Off the Pi. The URL and key come from the environment variables named in `config.yaml`. |
 | 2 | `hailo_ocr` | On the Pi. PaddleOCR on the Hailo-10H. This reads the code when LiteLLM is down, slow, rate-limited, or over budget. |
 | optional | `ollama` | A GPU running Qwen2.5-VL. Add it to `code_readers` to use it. Cap `vlm.ollama.num_ctx`, or the model overflows VRAM and falls back to CPU. |
 | not a code reader | `hailo` Qwen2-VL-2B | Puzzle number and the camera-challenge puzzles. Its fixed input is too small for code text. |
