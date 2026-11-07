@@ -103,7 +103,10 @@ DARK      = (8,   8,   8  )
 
 SUCCESS_RESET     = 15   # seconds on SUCCESS before returning to attract
 FAIL_RESET        = 5    # seconds on FAILURE/PARSE_ERROR before returning to attract
-READY_CAMERA_TOP  = _s(150)  # top of the large live camera on "READY YOUR CODE"
+# "READY YOUR CODE": the live camera fills the screen height (4:3), and the title and
+# hint sit on dark bands over its top and bottom edges.
+READY_CAMERA_W, READY_CAMERA_H = _s(1440), _s(1080)
+READY_BAND        = _s(120)
 SCANNING_TIMEOUT  = 4.0  # seconds without a preview ping → return to attract
 
 # Points awarded per puzzle (shown on success screen)
@@ -348,10 +351,13 @@ class Display:
             if state == 'attract':
                 self._draw_attract(draw, elapsed)
                 self._draw_camera_thumb(img, draw)
+            elif state == 'scanning' and data.get('source_type') == 'ready_code':
+                self._draw_ready_screen(img, draw, data, elapsed)
+                if time.time() - last_preview > SCANNING_TIMEOUT:
+                    self._set('attract', {})
             elif state == 'scanning':
                 self._draw_scanning(draw, data, elapsed)
-                self._draw_camera_thumb(img, draw,
-                                        large=data.get('source_type') == 'ready_code')
+                self._draw_camera_thumb(img, draw)
                 if time.time() - last_preview > SCANNING_TIMEOUT:
                     self._set('attract', {})
             elif state == 'received':
@@ -517,17 +523,25 @@ class Display:
         blink = int(elapsed * 2) % 2 == 0
         self._centered_text(draw, hint, HEIGHT - _s(140), AMBER if blink else AMBER_DIM, FONT_MD)
 
+    def _draw_ready_screen(self, img: Image.Image, draw: ImageDraw.ImageDraw, data: dict,
+                           elapsed: float):
+        """The live camera at full screen height, then the title and hint over it."""
+        self._draw_camera_thumb(img, draw, large=True)
+        self._draw_ready(draw, data, elapsed)
+
     def _draw_ready(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
-        """"READY YOUR CODE" on top, the live camera (drawn by the loop) in the middle,
-        and what to do next underneath it."""
+        """"READY YOUR CODE" and what to do next, on dark bands over the camera's top
+        and bottom edges."""
+        draw.rectangle([0, 0, WIDTH, READY_BAND], fill=DARK)
+        draw.rectangle([0, HEIGHT - READY_BAND, WIDTH, HEIGHT], fill=DARK)
         self._border(draw, AMBER)
         lines = [str(ln) for ln in data.get('ocr_lines', [])]
         title = lines[0] if lines else 'READY YOUR CODE'
         hint = lines[1] if len(lines) > 1 else ''
-        self._centered_text(draw, title, _s(60), AMBER, FONT_LG)
+        self._centered_text(draw, title, _s(30), AMBER, FONT_LG)
         if hint:
             blink = int(elapsed * 2) % 2 == 0
-            self._centered_text(draw, hint, HEIGHT - _s(150), GREEN if blink else GREEN_DIM,
+            self._centered_text(draw, hint, HEIGHT - _s(85), GREEN if blink else GREEN_DIM,
                                 FONT_MD)
 
     def _draw_cue(self, draw: ImageDraw.ImageDraw, data: dict, color: tuple):
@@ -792,12 +806,14 @@ class Display:
             return
         try:
             thumb_img = Image.open(BytesIO(base64.b64decode(thumb_b64))).convert('RGB')
-            tw, th = (_s(960), _s(720)) if large else (_s(320), _s(240))
+            tw, th = (READY_CAMERA_W, READY_CAMERA_H) if large else (_s(320), _s(240))
             thumb_img = thumb_img.resize((tw, th), Image.Resampling.LANCZOS)
             pad = _s(12)
             tx = (WIDTH - tw) // 2 if large else WIDTH - tw - pad
-            ty = READY_CAMERA_TOP if large else pad
+            ty = 0 if large else pad
             img.paste(thumb_img, (tx, ty))
+            if large:
+                return
             draw.rectangle([tx - 2, ty - 2, tx + tw + 2, ty + th + 2],
                            outline=CYAN, width=2)
             draw.text((tx, ty + th + _s(4)), 'CAMERA', font=FONT_SM, fill=CYAN)

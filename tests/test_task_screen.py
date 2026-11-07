@@ -132,7 +132,7 @@ def test_daemon_sends_the_ready_screen_hint(monkeypatch):
     assert sent[0]["source_type"] == "ready_code"
 
 
-def test_ready_screen_draws_the_hint_under_a_large_camera():
+def test_ready_screen_puts_title_and_hint_over_a_full_height_camera():
     import base64
     from io import BytesIO
 
@@ -151,12 +151,16 @@ def test_ready_screen_draws_the_hint_under_a_large_camera():
     img = Image.new("RGB", (display_manager.WIDTH, display_manager.HEIGHT), display_manager.DARK)
     draw = ImageDraw.Draw(img)
     hint = "Can't see your code. Hold it closer so it fills the camera."
-    d._draw_scanning(draw, {"ocr_lines": ["READY YOUR CODE", hint],
-                            "source_type": "ready_code"}, 0.0)
-    d._draw_camera_thumb(img, draw, large=True)
+    d._draw_ready_screen(img, draw, {"ocr_lines": ["READY YOUR CODE", hint],
+                                     "source_type": "ready_code"}, 0.0)
     assert [t for t, _ in drawn] == ["READY YOUR CODE", hint]
-    cam_top = display_manager.READY_CAMERA_TOP
-    cam_bottom = cam_top + display_manager._s(720)
-    assert drawn[0][1] < cam_top and drawn[1][1] > cam_bottom   # title above, hint below
-    mid = img.getpixel((display_manager.WIDTH // 2, (cam_top + cam_bottom) // 2))
-    assert mid[0] > 150 and mid[1] < 60                          # the camera fills the middle
+    band = display_manager.READY_BAND
+    h, w = display_manager.HEIGHT, display_manager.WIDTH
+    assert drawn[0][1] < band and drawn[1][1] > h - band        # text sits in the bands
+    cam_w = display_manager.READY_CAMERA_W
+    assert display_manager.READY_CAMERA_H == h and cam_w == h * 4 // 3   # full height, 4:3
+    for y in (band + 5, h // 2, h - band - 5):                   # camera fills between them
+        px = img.getpixel((w // 2, y))
+        assert px[0] > 150 and px[1] < 60, y
+    corner = img.getpixel(((w - cam_w) // 2 + 20, band // 2))   # band drawn over the camera
+    assert corner[0] < 60
