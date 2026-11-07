@@ -10,6 +10,7 @@ from vision.backends.hailo_ocr import (  # noqa: E402
     _class_probs,
     _line_axis,
     _upright,
+    readable_lines,
     text_lines,
 )
 
@@ -27,6 +28,17 @@ def test_text_lines_counts_each_line_of_text():
     heat[400:420, 700:900] = 0.35                    # faint glow, not a line
     _, lines = text_lines(heat)
     assert len(lines) == 3
+
+
+def test_small_text_in_the_scene_is_not_code_in_view():
+    # Measured on kepler: a hotel room gave two text-like blobs at most 34 of 725 px
+    # wide; code frames' widest line was always 156 px or more.
+    heat = np.zeros((544, 960), np.float32)
+    heat[300:310, 100:134] = 0.9                     # 34 px: a shirt print, a sign
+    heat[200:212, 500:517] = 0.9
+    assert readable_lines(heat, content_w=725) == 0
+    heat[100:120, 100:260] = 0.9                     # 160 px: a line of code
+    assert readable_lines(heat, content_w=725) == 1
 
 
 def test_class_probs_softmaxes_logits_over_every_class():
