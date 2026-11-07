@@ -2,7 +2,7 @@
 
 Each is the truth for its samples. They are short enough to copy, and between them they
 cover what goes wrong in handwriting: indentation (2), quotes and nested brackets (1, 2),
-and a long run of look-alike letters (3). Puzzle 4 has none: its maze changes each reset
+and runs of look-alike letters (3). Puzzle 4 has none: its maze changes each reset
 (and is not shown to players yet, #17).
 """
 from __future__ import annotations
@@ -17,7 +17,14 @@ REFERENCES: dict[int, str] = {
         "    total += int(line)\n"
         "print(total)\n"
     ),
-    3: '# team: ocrcade\nprint("DDDDRRUURRUURRDDRRUURRDDDDRRDDDDDDLLDDRR")\n',
+    # One path, three short lines: Python joins adjacent strings, so it still prints
+    # on one line, and each line stays large enough to read on the answer slip.
+    3: (
+        "# team: ocrcade\n"
+        'print("DDDDRRUURRUURR"\n'
+        '      "DDRRUURRDDDDRR"\n'
+        '      "DDDDDDLLDDRR")\n'
+    ),
 }
 
 PUZZLES = tuple(sorted(REFERENCES))
