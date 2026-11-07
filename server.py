@@ -154,8 +154,10 @@ def reset():
 @require_operator
 def preview():
     d = request.get_json(force=True)
+    puzzle = d.get("puzzle")
     display.preview(d.get("ocr_lines", []), float(d.get("stability", 0.0)),
-                    float(d.get("max_stability", 2.0)), d.get("source_type", "unknown"))
+                    float(d.get("max_stability", 2.0)), d.get("source_type", "unknown"),
+                    puzzle if isinstance(puzzle, int) else None)
     return jsonify({"status": "ok"}), 200
 
 
