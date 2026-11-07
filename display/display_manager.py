@@ -171,6 +171,7 @@ FONT_XL = _find_font(_FONT_PATHS_BOLD, _s(120))
 FONT_LG = _find_font(_FONT_PATHS_BOLD, _s(56))
 FONT_MD = _find_font(_FONT_PATHS,      _s(36))
 FONT_SM = _find_font(_FONT_PATHS,      _s(24))
+FONT_FLAG = _find_font(_FONT_PATHS_BOLD, _s(48))   # twice the program-output text
 
 
 # ── RGB565 conversion ───────────────────────────────────────────────────────────
@@ -239,8 +240,8 @@ class Display:
     def executing(self, stdout: str, stderr: str):
         self._set('executing', {'stdout': stdout, 'stderr': stderr})
 
-    def success(self, team: str, puzzle: int):
-        self._set('success', {'team': team, 'puzzle': puzzle})
+    def success(self, team: str, puzzle: int, flag: str = ''):
+        self._set('success', {'team': team, 'puzzle': puzzle, 'flag': flag})
 
     def failure(self, team: str, message: str, ocr: str = ''):
         self._set('failure', {'team': team, 'message': message, 'ocr': ocr})
@@ -591,6 +592,8 @@ class Display:
             0,
         )
         self._border(draw, color)
+        if data.get('flag'):
+            self._draw_flag(draw, str(data['flag']))
 
         puzzle = data.get('puzzle', 0)
         team   = data.get('team', '?').upper()
@@ -608,6 +611,15 @@ class Display:
         self._centered_text(draw,
             f"RESETTING IN {max(0, int(SUCCESS_RESET - elapsed))}s",
             HEIGHT - _s(80), AMBER_DIM, FONT_SM)
+
+    def _draw_flag(self, draw: ImageDraw.ImageDraw, flag: str):
+        """The earned flag, large and right-aligned in the top-right corner."""
+        pad = _s(40)
+        label_w = draw.textbbox((0, 0), 'FLAG', font=FONT_SM)[2]
+        draw.text((WIDTH - pad - label_w, pad), 'FLAG', font=FONT_SM, fill=AMBER)
+        flag_w = draw.textbbox((0, 0), flag, font=FONT_FLAG)[2]
+        x = max(pad, WIDTH - pad - flag_w)
+        draw.text((x, pad + _s(36)), flag, font=FONT_FLAG, fill=WHITE)
 
     def _draw_maze_preview(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
         """Show the maze so the player can study it before writing their solution."""

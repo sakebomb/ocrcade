@@ -52,8 +52,9 @@ def _post(url: str, payload: dict, timeout: float = 5.0) -> None:
 
 
 def _thumb_b64(frame_bgr) -> str:
-    thumb = cv2.resize(frame_bgr, (320, 240), interpolation=cv2.INTER_AREA)
-    ok, jpeg = cv2.imencode(".jpg", thumb, [cv2.IMWRITE_JPEG_QUALITY, 60])
+    # The lores frame as captured (640x480): the "ready your code" screen scales it to
+    # full screen height, where a 320x240 thumbnail was too soft to frame a page by.
+    ok, jpeg = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return base64.b64encode(jpeg.tobytes()).decode() if ok else ""
 
 

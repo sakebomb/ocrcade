@@ -300,7 +300,7 @@ def _score(puzzle: int, team: str, message: str, outcome: Outcome) -> None:
             ok, rtb_msg = rtb_submit(team, puzzle, message)
             log.info(f"RTB submit result: {ok} – {rtb_msg}")
             _append_solved_log(team, puzzle)
-        display.success(team, puzzle)
+        display.success(team, puzzle, message)
 
     outcome.claim(finish)
 
