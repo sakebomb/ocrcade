@@ -6,7 +6,27 @@ import pytest
 cv2 = pytest.importorskip("cv2")
 np = pytest.importorskip("numpy")
 
-from vision.backends.hailo_ocr import _class_probs, _line_axis, _upright  # noqa: E402
+from vision.backends.hailo_ocr import (  # noqa: E402
+    _class_probs,
+    _line_axis,
+    _upright,
+    text_lines,
+)
+
+
+def test_text_lines_finds_nothing_in_an_empty_heatmap():
+    _, lines = text_lines(np.zeros((544, 960), np.float32))
+    assert lines == []
+
+
+def test_text_lines_counts_each_line_of_text():
+    heat = np.zeros((544, 960), np.float32)
+    for top in (100, 160, 220):                      # three lines of "letters"
+        for x in range(100, 600, 30):
+            heat[top:top + 20, x:x + 20] = 0.9
+    heat[400:420, 700:900] = 0.35                    # faint glow, not a line
+    _, lines = text_lines(heat)
+    assert len(lines) == 3
 
 
 def test_class_probs_softmaxes_logits_over_every_class():

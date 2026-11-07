@@ -62,6 +62,39 @@ def test_degraded_when_the_first_code_reader_is_down():
     assert not VLMClient(code_readers=[FakeReader("a"), FakeReader("b", up=False)]).degraded
 
 
+class FakeTextCheck:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def count_text_lines(self, _img):
+        return self.lines
+
+
+def test_sees_text_when_the_detector_finds_a_line():
+    assert VLMClient(text_check=FakeTextCheck(2)).sees_text(None)
+
+
+def test_no_text_when_the_detector_finds_nothing():
+    assert not VLMClient(text_check=FakeTextCheck(0)).sees_text(None)
+
+
+def test_unsure_detector_never_blocks_a_read():
+    assert VLMClient(text_check=FakeTextCheck(None)).sees_text(None)   # Hailo down
+    assert VLMClient().sees_text(None)                                # no check set
+
+
+def test_config_uses_the_hailo_reader_as_the_text_check():
+    import pytest
+
+    pytest.importorskip("cv2")
+    from vision import load_config
+    from vision.vlm_client import from_config
+
+    client = from_config(load_config()["vlm"])
+    names = [r.name for r in client.code_readers]
+    assert client.text_check is client.code_readers[names.index("hailo-ocr")]
+
+
 def test_failure_is_unreadable_and_flagged():
     r = CardReading.failure("boom", "x", 1.5)
     got = (r.readable, r.failed, r.reason, r.backend, r.latency_s)
