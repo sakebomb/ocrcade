@@ -6,6 +6,7 @@ Each validator receives the stdout string and returns (success: bool, message: s
 
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 log = logging.getLogger('ocrcade.validator')
@@ -162,39 +163,70 @@ def _extract_path(stdout: str) -> str | None:
     return None
 
 
-def _validate_maze_path(maze: list[str], path: str) -> bool:
+@dataclass(frozen=True)
+class MazeWalk:
+    """A path walked through a maze, move by move, as far as it legally goes.
+
+    `cells` starts at S and gains one (row, col) per legal move. `blocked` is the
+    cell the first illegal move tried to enter (a wall or off the maze), or None.
+    `ok` means every move was legal and the last one landed on E.
     """
-    Walk the path through the maze.
-    Returns True if path leads from S to E without hitting walls.
-    """
-    # Find start
-    start = None
-    end = None
+    maze: tuple[str, ...]
+    cells: tuple[tuple[int, int], ...]
+    blocked: tuple[int, int] | None
+    ok: bool
+
+
+_MOVES = {'R': (0, 1), 'L': (0, -1), 'U': (-1, 0), 'D': (1, 0)}
+
+
+def walk_maze(maze: list[str], path: str) -> MazeWalk | None:
+    """Walk `path` from S. None when the maze has no S or no E."""
+    start = end = None
     for r, row in enumerate(maze):
         for c, ch in enumerate(row):
             if ch == 'S':
                 start = (r, c)
             if ch == 'E':
                 end = (r, c)
-
     if not start or not end:
         log.error("Maze missing S or E")
-        return False
+        return None
 
-    MOVES = {'R': (0, 1), 'L': (0, -1), 'U': (-1, 0), 'D': (1, 0)}
-    rows = len(maze)
-    cols = max(len(row) for row in maze)
-
-    r, c = start
+    rows, cols = len(maze), max(len(row) for row in maze)
+    cells = [start]
     for step in path:
-        if step not in MOVES:
-            return False
-        dr, dc = MOVES[step]
-        r, c = r + dr, c + dc
-        if r < 0 or r >= rows or c < 0 or c >= cols:
-            return False
-        cell = maze[r][c] if c < len(maze[r]) else '#'
-        if cell == '#':
-            return False
+        r, c = cells[-1]
+        dr, dc = _MOVES.get(step, (0, 0))
+        nr, nc = r + dr, c + dc
+        off = step not in _MOVES or not (0 <= nr < rows and 0 <= nc < cols)
+        if off or (maze[nr][nc] if nc < len(maze[nr]) else '#') == '#':
+            return MazeWalk(tuple(maze), tuple(cells), (nr, nc), False)
+        cells.append((nr, nc))
+    return MazeWalk(tuple(maze), tuple(cells), None, cells[-1] == end)
 
-    return (r, c) == end
+
+def _validate_maze_path(maze: list[str], path: str) -> bool:
+    """True if the path leads from S to E without hitting a wall or leaving the maze."""
+    walk = walk_maze(maze, path)
+    return walk is not None and walk.ok
+
+
+# Puzzles whose result screen first replays the player's path through the maze.
+# Puzzle 3 only: puzzle 4's maze stays hidden until it resets.
+WALK_PUZZLES = (3,)
+
+
+def maze_walk_for(puzzle: int, stdout: str) -> MazeWalk | None:
+    """The walk to replay before this puzzle's result, or None (no maze, no path)."""
+    if puzzle not in WALK_PUZZLES:
+        return None
+    path = _extract_path(stdout)
+    if not path:
+        return None
+    try:
+        maze = (PUZZLES_DIR / f'level{puzzle}' / 'maze_fixed.txt').read_text().splitlines()
+    except OSError as e:
+        log.warning(f"maze replay skipped, maze unreadable: {e}")
+        return None
+    return walk_maze(maze, path)
