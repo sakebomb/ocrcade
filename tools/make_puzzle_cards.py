@@ -136,7 +136,7 @@ def _draw_cuts(page: np.ndarray, cell_w: int, cell_h: int) -> None:
 def build_six_up_pages() -> list[np.ndarray]:
     """Letter pages, six cut-out cards each, puzzle-major order."""
     dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, DICT_NAME))
-    items = sorted(default_marker_map().items())
+    items = sorted(default_marker_map().items(), key=lambda item: (item[1][0], item[0]))
     cell_w, cell_h = _cell_size()
     pages: list[np.ndarray] = []
     for start in range(0, len(items), PER_PAGE):

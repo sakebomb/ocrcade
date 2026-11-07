@@ -21,13 +21,15 @@ def _sheets():
 def test_six_up_pages_decode_every_card():
     sheets = _sheets()
     pages = sheets.build_six_up_pages()
-    assert len(pages) == 3
+    assert len(pages) == 4                                    # 21 cards, six to a page
     assert pages[0].shape == (sheets.LETTER_H, sheets.LETTER_W, 3)
     detector = MarkerDetector()
     found = [hit for page in pages for hit in detector.detect(page)]
-    assert len(found) == 18
+    assert len(found) == 21
     assert {(hit.puzzle, hit.lang) for hit in found} == {
         (puzzle, lang)
-        for puzzle in range(1, 7)
+        for puzzle in range(0, 7)
         for lang in ("python", "bash", "cpp")
     }
+    first_page = {hit.puzzle for hit in detector.detect(pages[0])}
+    assert first_page == {0, 1}                               # puzzle order: 0 first
