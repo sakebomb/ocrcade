@@ -7,12 +7,17 @@ import pytest
 from vision.markers import LANGS, default_marker_map, lookup
 
 
-def test_map_has_18_entries_one_per_puzzle_lang():
+def test_map_has_one_entry_per_puzzle_lang():
     m = default_marker_map()
-    assert len(m) == 6 * len(LANGS) == 18
-    assert set(m.keys()) == set(range(1, 19))
-    # every (puzzle, lang) combo present exactly once
-    assert sorted(m.values()) == sorted((p, lg) for p in range(1, 7) for lg in LANGS)
+    assert len(m) == 7 * len(LANGS) == 21
+    assert set(m.keys()) == set(range(1, 22))
+    # every (puzzle, lang) combo present exactly once, puzzle 0 (System Check) included
+    assert sorted(m.values()) == sorted((p, lg) for p in range(0, 7) for lg in LANGS)
+
+
+def test_puzzle_0_takes_19_to_21_so_printed_cards_keep_their_ids():
+    m = default_marker_map()
+    assert [m[i] for i in (19, 20, 21)] == [(0, "python"), (0, "bash"), (0, "cpp")]
 
 
 def test_map_is_puzzle_major_and_stable():

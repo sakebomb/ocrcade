@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the printable ArUco Puzzle/Lang cards (organizer runs this once).
 
-Produces one card per (puzzle, lang) — 18 total — each with a big ArUco marker
+Produces one card per (puzzle, lang) — 21 total, puzzle 0 included — each with a big ArUco marker
 plus a human-readable "PUZZLE N / LANG" label. Players show the matching card to
 the camera to select their puzzle. Marker IDs follow vision.markers.default_marker_map.
 

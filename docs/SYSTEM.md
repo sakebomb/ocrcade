@@ -197,7 +197,7 @@ Generate the printable cards once and print them:
 python3 tools/make_puzzle_cards.py --out puzzle_cards --sheet
 ```
 
-This writes 18 cards — one per (puzzle, language) — each with a big ArUco marker and
+This writes 21 cards — one per (puzzle, language) — each with a big ArUco marker and
 a human label like **"PUZZLE 2 · PYTHON"**, plus a contact sheet. Print them, ideally
 on matte stock (less glare). The marker ID → (puzzle, language) mapping is fixed in
 `vision/markers.py`; you don't need to configure anything unless you re-map it.
@@ -209,7 +209,7 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
 ## 9. Running an event (operator runbook)
 
 **Before doors open**
-1. Generate + print the 18 puzzle cards (§8). Lay them out where teams can grab them.
+1. Generate + print the 21 puzzle cards (§8). Lay them out where teams can grab them.
 2. Put the registered teams in `roster.names` (§7).
 3. Confirm the first code reader answers, or that Hailo OCR is loaded on the Pi.
 4. Wire + enable the button if using one (§6).

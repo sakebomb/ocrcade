@@ -1,7 +1,7 @@
 """ArUco puzzle/lang marker cards.
 
 In the ArUco model the organizer prints one physical card per (puzzle, lang) —
-6 puzzles x 3 langs = 18 cards — each carrying an ArUco marker. The player shows
+7 puzzles (0..6) x 3 langs = 21 cards — each carrying an ArUco marker. The player shows
 the card to SELECT a puzzle; the marker ID maps deterministically to (puzzle,
 lang). ArUco is built into OpenCV (`cv2.aruco`, no extra dep) and detects
 robustly at blur/angle/distance — ideal for a fixed organizer-controlled set.
@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 LANGS = ("python", "bash", "cpp")
-DICT_NAME = "DICT_4X4_50"          # 50 IDs, robust 4x4 markers; we use 1..18
+DICT_NAME = "DICT_4X4_50"          # 50 IDs, robust 4x4 markers; we use 1..21
 
 
 @dataclass(frozen=True)
@@ -29,12 +29,18 @@ class PuzzleMarker:
 
 def default_marker_map() -> dict[int, tuple[int, str]]:
     """Canonical ID -> (puzzle, lang). IDs 1..18, ordered puzzle-major:
-    id = (puzzle-1)*3 + lang_index + 1, for puzzle 1..6 and LANGS order."""
-    return {
+    id = (puzzle-1)*3 + lang_index + 1, for puzzle 1..6 and LANGS order.
+
+    Puzzle 0 (System Check) came later and takes 19..21, so cards already printed
+    for puzzles 1..6 keep their IDs.
+    """
+    mapping = {
         (p - 1) * 3 + i + 1: (p, lang)
         for p in range(1, 7)
         for i, lang in enumerate(LANGS)
     }
+    mapping.update({19 + i: (0, lang) for i, lang in enumerate(LANGS)})
+    return mapping
 
 
 def lookup(marker_id: int, mapping: dict[int, tuple[int, str]] | None = None
