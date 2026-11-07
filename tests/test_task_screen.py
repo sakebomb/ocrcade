@@ -216,3 +216,38 @@ def test_camera_feed_keeps_the_full_lores_frame():
 
     thumb = daemon._thumb_b64(np.zeros((480, 640, 3), dtype=np.uint8))
     assert Image.open(BytesIO(base64.b64decode(thumb))).size == (640, 480)
+
+
+def test_main_page_camera_is_half_again_as_big_and_clears_the_text(monkeypatch):
+    import base64
+    from io import BytesIO
+
+    # The layout is for kepler's 16:9 monitor; a CI runner's framebuffer may be 4:3.
+    monkeypatch.setattr(display_manager, "WIDTH", display_manager.HEIGHT * 16 // 9)
+    d = _display("attract")
+    d._load_solved_log = lambda: []
+    spans = []
+    real = display_manager.Display._centered_text
+
+    def record(self, draw, text, y, color, font):
+        box = draw.textbbox((0, 0), text, font=font)
+        right = (display_manager.WIDTH + box[2] - box[0]) // 2
+        spans.append((right, y, y + box[3]))
+        return real(self, draw, text, y, color, font)
+
+    d._centered_text = record.__get__(d)
+    buf = BytesIO()
+    Image.new("RGB", (640, 480), (200, 0, 0)).save(buf, "JPEG")
+    d._thumb_b64 = base64.b64encode(buf.getvalue()).decode()
+    img = Image.new("RGB", (display_manager.WIDTH, display_manager.HEIGHT), display_manager.DARK)
+    d._draw_main_page(img, ImageDraw.Draw(img), 0.0)
+
+    cw, ch = display_manager.MAIN_CAMERA
+    assert (cw, ch) == (display_manager._s(480), display_manager._s(360))
+    pad = display_manager._s(12)
+    left, top = display_manager.WIDTH - cw - pad, pad
+    px = img.getpixel((left + cw // 2, top + ch - 5))   # bottom of the 1.5x camera
+    assert px[0] > 150 and px[1] < 60
+    for right, y0, y1 in spans:                          # no text under the camera
+        if y0 < top + ch and y1 > top:
+            assert right < left, (right, y0)
