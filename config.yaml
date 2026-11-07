@@ -47,7 +47,7 @@ gating:
 camera:
   main_size: [2028, 1520]
   lores_size: [640, 480]
-  rotate: 180             # the camera is mounted upside down; 0/90/180/270
+  rotate: 0               # camera points down at the table; 0/90/180/270 if the mount changes
 
 # --- ArUco model (puzzle/lang from a marker card; team from a `# team:` line) ---
 markers:
