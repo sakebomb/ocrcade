@@ -50,6 +50,9 @@ ROTATIONS = (0, 90, 180, 270)
 # >= 0.90 mean confidence; empty scenes and fragments fall below the abstain gate.
 UPRIGHT_ENOUGH = (20, 0.85)  # (chars, conf): accept the upright read, skip rotations
 ABSTAIN_BELOW = (15, 0.70)   # (chars, conf): fewer chars or lower conf -> "can't read"
+# Text check before a paid read. On kepler (2026-11-06) a hotel room's text-like blobs
+# were at most 5% of the frame wide; every logged code frame had a line of 20% or more.
+CODE_LINE_MIN_FRAC = 0.10
 _ROTATE = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
            270: cv2.ROTATE_90_COUNTERCLOCKWISE}
 
@@ -83,6 +86,42 @@ def _letterbox(img: np.ndarray, w: int, h: int) -> tuple[np.ndarray, _Letterbox]
     t, lft = (h - nh) // 2, (w - nw) // 2
     out = cv2.copyMakeBorder(r, t, h - nh - t, lft, w - nw - lft, cv2.BORDER_CONSTANT, value=0)
     return out, _Letterbox(s, lft, t)
+
+
+def text_lines(heat: np.ndarray) -> tuple[np.ndarray, list]:
+    """The detector's text mask, and the contours of blobs that look like text lines.
+
+    Letters are smeared sideways so a line becomes one blob; specks and faint blobs
+    are dropped.
+    """
+    mask = (heat > HEAT_ON).astype(np.uint8)
+    n, _, stats, _ = cv2.connectedComponentsWithStats(mask)
+    heights = [stats[i, 3] for i in range(1, n) if stats[i, 4] >= 20]
+    if not heights:
+        return mask, []
+    k = max(3, int(np.median(heights) * LINE_MERGE))
+    merged = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_RECT, (k, 1)))
+    cnts, _ = cv2.findContours(merged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    lines = []
+    for c in cnts:
+        x, y, w, h = cv2.boundingRect(c)
+        inside = mask[y:y + h, x:x + w] > 0
+        if cv2.contourArea(c) < LINE_MIN_AREA or not inside.any() \
+                or heat[y:y + h, x:x + w][inside].mean() < LINE_MEAN_MIN:
+            continue
+        lines.append(c)
+    return mask, lines
+
+
+def readable_lines(heat: np.ndarray, content_w: float) -> int:
+    """Text lines wide enough to be code held up to the camera.
+
+    content_w is the frame's width inside the letterboxed detector input. Text in the
+    background (a sign, a shirt print) is detected too, but far narrower.
+    """
+    _, lines = text_lines(heat)
+    min_w = CODE_LINE_MIN_FRAC * content_w
+    return sum(1 for c in lines if cv2.boundingRect(c)[2] >= min_w)
 
 
 def _upright(img: np.ndarray, center, size, angle: float) -> np.ndarray:
@@ -233,26 +272,33 @@ class HailoOCRBackend:
                 words.append(text)
         return words, confs
 
+    def count_text_lines(self, image_bgr: np.ndarray) -> int | None:
+        """Code-sized text lines the detector sees in the upright frame, without
+        recognizing them.
+
+        None when the models are not loaded or the detector fails: the caller must
+        treat that as "don't know", never as "no text".
+        """
+        try:
+            if not self._ensure_loaded():
+                return None
+            inp, lb = _letterbox(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB), DET_W, DET_H)
+            heat = self._infer("det", inp)[:, :, 0]
+            return readable_lines(heat, image_bgr.shape[1] * lb.scale)
+        except Exception as e:  # a text check must never take reading down with it
+            log.warning(f"Hailo text check failed: {e}")
+            return None
+
     def _read_frame(self, rgb: np.ndarray, rotation: int) -> OCRResult:
         """All confident text lines in one orientation."""
         inp, lb = _letterbox(rgb, DET_W, DET_H)
         heat = self._infer("det", inp)[:, :, 0]
-        mask = (heat > HEAT_ON).astype(np.uint8)
-        n, _, stats, _ = cv2.connectedComponentsWithStats(mask)
-        heights = [stats[i, 3] for i in range(1, n) if stats[i, 4] >= 20]
-        if not heights:
-            return OCRResult("", 0, 0.0, rotation)
-        k = max(3, int(np.median(heights) * LINE_MERGE))
-        merged = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_RECT, (k, 1)))
-        cnts, _ = cv2.findContours(merged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        mask, lines = text_lines(heat)
         segments: list[Segment] = []
         kept: list[float] = []
-        for c in cnts:
+        for c in lines:
             x, y, w, h = cv2.boundingRect(c)
             inside = mask[y:y + h, x:x + w] > 0
-            if cv2.contourArea(c) < LINE_MIN_AREA or not inside.any() \
-                    or heat[y:y + h, x:x + w][inside].mean() < LINE_MEAN_MIN:
-                continue
             rect = cv2.minAreaRect(c)
             (lw, lh), ang, line_h = _line_axis(rect)
             px, py = PAD_X * line_h, PAD_Y * line_h

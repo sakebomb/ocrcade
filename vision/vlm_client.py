@@ -28,16 +28,37 @@ class VLMBackend(Protocol):
     def read_code(self, image_bgr: np.ndarray) -> CardReading: ...
 
 
+class TextCheck(Protocol):
+    def count_text_lines(self, image_bgr: np.ndarray) -> int | None: ...
+
+
 class VLMClient:
     def __init__(self, primary: VLMBackend | None = None,
                  fallback: VLMBackend | None = None,
                  on_unreachable: str = "degrade",
-                 code_readers: Sequence[VLMBackend] | None = None):
+                 code_readers: Sequence[VLMBackend] | None = None,
+                 text_check: TextCheck | None = None):
         self.primary = primary
         self.fallback = fallback
         self.on_unreachable = on_unreachable
         self.code_readers = list(code_readers) if code_readers is not None \
             else [primary] if primary is not None else []
+        self.text_check = text_check
+
+    def sees_text(self, image_bgr: np.ndarray) -> bool:
+        """False only when the on-device detector looked and found no text line.
+
+        Skips a paid read of an empty scene (the room, an empty table). A detector
+        that is missing or unsure never blocks a read.
+        """
+        if self.text_check is None:
+            return True
+        lines = self.text_check.count_text_lines(image_bgr)
+        if lines is None:
+            return True
+        if lines == 0:
+            log.info("text check: no text in view, read skipped")
+        return lines > 0
 
     def read_card(self, image_bgr: np.ndarray) -> CardReading:
         if self.primary is not None and self.primary.available():
@@ -114,6 +135,10 @@ def from_config(cfg: dict) -> VLMClient:
     if unknown:
         raise ValueError(f"vlm.code_readers: unknown {unknown}; choose from {list(CODE_READERS)}")
     code_readers = [CODE_READERS[n](cfg) for n in names]
+    # The text check reuses the Hailo OCR reader already in the chain: one device.
+    text_check = None
+    if cfg.get("text_check", True) and "hailo_ocr" in names:
+        text_check = code_readers[names.index("hailo_ocr")]
     primary = _ollama(cfg)
     fallback = None
     if cfg.get("fallback") == "hailo":
@@ -123,4 +148,5 @@ def from_config(cfg: dict) -> VLMClient:
             fallback = HailoVLMBackend(hef=h["hef"], max_tokens=h.get("max_tokens", 64))
         except Exception as e:  # never let an absent Hailo break the GPU path
             log.warning(f"hailo fallback unavailable: {e}")
-    return VLMClient(primary, fallback, cfg.get("on_unreachable", "degrade"), code_readers)
+    return VLMClient(primary, fallback, cfg.get("on_unreachable", "degrade"), code_readers,
+                     text_check)

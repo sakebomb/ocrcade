@@ -196,9 +196,15 @@ class Pipeline:
         self._to_idle()
 
     def _read(self, main) -> None:
+        # An empty scene (the room, a bare table) is sharp and still too, so the gate
+        # fires on it. That is not a failed read: keep asking for code, no error.
+        if not self.reader.sees_text(main):
+            self.gate.reset()
+            return
         r = self.reader.read_code(main)
         if not r.readable:
-            self.ui.feedback("CARD NOT READ", (r.reason or "could not read")[:48])
+            log.info(f"code not read: {r.reason}")
+            self.ui.feedback("CODE NOT READ", "Hold the paper so it fills the camera")
             self.gate.reset()                     # stay SELECTED — let them retry
             return
         team = resolve_team(r.code, self.roster, self.roster_cutoff)

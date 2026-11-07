@@ -43,9 +43,13 @@ class FakeGate:
 
 
 class FakeReader:
-    def __init__(self, reading):
+    def __init__(self, reading, text_in_view=True):
         self.reading = reading
+        self.text_in_view = text_in_view
         self.calls = 0
+
+    def sees_text(self, _frame):
+        return self.text_in_view
 
     def read_code(self, _frame):
         self.calls += 1
@@ -159,7 +163,20 @@ def test_unreadable_stays_selected_and_feeds_back():
     h.select(FakeMarker(4, 2, "python"))
     assert h.show_code() is State.SELECTED               # not readback
     assert h.submits == []
-    assert ("feedback", "CARD NOT READ", "blurry") in h.ui.calls
+    # The reader's own reason ("blurry", "the image shows a hotel room ...") is for the
+    # log; the player gets something to do.
+    assert ("feedback", "CODE NOT READ", "Hold the paper so it fills the camera") \
+        in h.ui.calls
+
+
+def test_no_text_in_view_skips_the_read_quietly():
+    reader = FakeReader(_readable("# team: Anael\nx"), text_in_view=False)
+    h = Harness(reader)
+    h.select(FakeMarker(4, 2, "python"))
+    assert h.show_code() is State.SELECTED
+    assert reader.calls == 0
+    assert not any(c[0] == "feedback" for c in h.ui.calls)
+    assert h.ui.calls[-1][0] == "await_code"
 
 
 def test_unregistered_team_rejected():
