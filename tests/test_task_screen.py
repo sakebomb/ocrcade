@@ -122,3 +122,41 @@ def test_daemon_sends_the_task_when_a_card_locks(monkeypatch):
     assert sent[0]["ocr_lines"] == ["PUZZLE 2", "PYTHON", *task_lines(2)]
     assert sent[1]["ocr_lines"][1] == "CAMERA GAME"
     assert sent[2]["source_type"] == "await_card"
+
+
+def test_daemon_sends_the_ready_screen_hint(monkeypatch):
+    sent = []
+    monkeypatch.setattr(daemon, "_post", lambda url, payload, timeout=5.0: sent.append(payload))
+    daemon.ServerUI("http://exec").await_code(1, "python", 0.0, "Too blurry. Hold the paper still.")
+    assert sent[0]["ocr_lines"] == ["READY YOUR CODE", "Too blurry. Hold the paper still."]
+    assert sent[0]["source_type"] == "ready_code"
+
+
+def test_ready_screen_draws_the_hint_under_a_large_camera():
+    import base64
+    from io import BytesIO
+
+    d = _display("scanning")
+    drawn = []
+    real = display_manager.Display._centered_text
+
+    def record(self, draw, text, y, *args, **kwargs):
+        drawn.append((text, y))
+        return real(self, draw, text, y, *args, **kwargs)
+
+    d._centered_text = record.__get__(d)
+    buf = BytesIO()
+    Image.new("RGB", (320, 240), (200, 0, 0)).save(buf, "JPEG")
+    d._thumb_b64 = base64.b64encode(buf.getvalue()).decode()
+    img = Image.new("RGB", (display_manager.WIDTH, display_manager.HEIGHT), display_manager.DARK)
+    draw = ImageDraw.Draw(img)
+    hint = "Can't see your code. Hold it closer so it fills the camera."
+    d._draw_scanning(draw, {"ocr_lines": ["READY YOUR CODE", hint],
+                            "source_type": "ready_code"}, 0.0)
+    d._draw_camera_thumb(img, draw, large=True)
+    assert [t for t, _ in drawn] == ["READY YOUR CODE", hint]
+    cam_top = display_manager.READY_CAMERA_TOP
+    cam_bottom = cam_top + display_manager._s(720)
+    assert drawn[0][1] < cam_top and drawn[1][1] > cam_bottom   # title above, hint below
+    mid = img.getpixel((display_manager.WIDTH // 2, (cam_top + cam_bottom) // 2))
+    assert mid[0] > 150 and mid[1] < 60                          # the camera fills the middle

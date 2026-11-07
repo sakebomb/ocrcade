@@ -103,6 +103,7 @@ DARK      = (8,   8,   8  )
 
 SUCCESS_RESET     = 15   # seconds on SUCCESS before returning to attract
 FAIL_RESET        = 5    # seconds on FAILURE/PARSE_ERROR before returning to attract
+READY_CAMERA_TOP  = _s(150)  # top of the large live camera on "READY YOUR CODE"
 SCANNING_TIMEOUT  = 4.0  # seconds without a preview ping → return to attract
 
 # Points awarded per puzzle (shown on success screen)
@@ -349,7 +350,8 @@ class Display:
                 self._draw_camera_thumb(img, draw)
             elif state == 'scanning':
                 self._draw_scanning(draw, data, elapsed)
-                self._draw_camera_thumb(img, draw)
+                self._draw_camera_thumb(img, draw,
+                                        large=data.get('source_type') == 'ready_code')
                 if time.time() - last_preview > SCANNING_TIMEOUT:
                     self._set('attract', {})
             elif state == 'received':
@@ -451,7 +453,7 @@ class Display:
             self._draw_task(draw, data, elapsed)
             return
         if source == 'ready_code':
-            self._draw_cue(draw, data, AMBER)
+            self._draw_ready(draw, data, elapsed)
             return
         self._border(draw, CYAN)
 
@@ -514,6 +516,19 @@ class Display:
             y += _s(56)
         blink = int(elapsed * 2) % 2 == 0
         self._centered_text(draw, hint, HEIGHT - _s(140), AMBER if blink else AMBER_DIM, FONT_MD)
+
+    def _draw_ready(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
+        """"READY YOUR CODE" on top, the live camera (drawn by the loop) in the middle,
+        and what to do next underneath it."""
+        self._border(draw, AMBER)
+        lines = [str(ln) for ln in data.get('ocr_lines', [])]
+        title = lines[0] if lines else 'READY YOUR CODE'
+        hint = lines[1] if len(lines) > 1 else ''
+        self._centered_text(draw, title, _s(60), AMBER, FONT_LG)
+        if hint:
+            blink = int(elapsed * 2) % 2 == 0
+            self._centered_text(draw, hint, HEIGHT - _s(150), GREEN if blink else GREEN_DIM,
+                                FONT_MD)
 
     def _draw_cue(self, draw: ImageDraw.ImageDraw, data: dict, color: tuple):
         """Full-screen beat: the puzzle confirmation, then "ready your code"."""
@@ -767,20 +782,21 @@ class Display:
 
     # ── Helpers ──────────────────────────────────────────────────────────────────
 
-    def _draw_camera_thumb(self, img: Image.Image, draw: ImageDraw.ImageDraw):
-        """Overlay the live camera thumbnail in the top-right corner."""
+    def _draw_camera_thumb(self, img: Image.Image, draw: ImageDraw.ImageDraw,
+                           large: bool = False):
+        """Overlay the live camera thumbnail: top-right corner, or large and centered
+        on the "ready your code" screen so players can frame their page."""
         with self._lock:
             thumb_b64 = self._thumb_b64
         if not thumb_b64:
             return
         try:
             thumb_img = Image.open(BytesIO(base64.b64decode(thumb_b64))).convert('RGB')
-            tw = _s(320)
-            th = _s(240)
+            tw, th = (_s(960), _s(720)) if large else (_s(320), _s(240))
             thumb_img = thumb_img.resize((tw, th), Image.Resampling.LANCZOS)
             pad = _s(12)
-            tx = WIDTH - tw - pad
-            ty = pad
+            tx = (WIDTH - tw) // 2 if large else WIDTH - tw - pad
+            ty = READY_CAMERA_TOP if large else pad
             img.paste(thumb_img, (tx, ty))
             draw.rectangle([tx - 2, ty - 2, tx + tw + 2, ty + th + 2],
                            outline=CYAN, width=2)
