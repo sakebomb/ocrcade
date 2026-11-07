@@ -32,7 +32,8 @@ FRUITAGE_TOKEN = 'FRUITAGE_SOLVED'
 def validate(puzzle: int, stdout: str) -> tuple[bool, str]:
     """
     Returns (success, message).
-    If success, message is the flag string (for internal RTB submission only).
+    If success, message is the flag string: submitted to RTB and shown on the
+    success screen.
     If failure, message is the player-facing error.
 
     For puzzles 5 and 6, stdout is a raw token (not sandbox output) — validated

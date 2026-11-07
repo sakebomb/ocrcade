@@ -164,3 +164,55 @@ def test_ready_screen_puts_title_and_hint_over_a_full_height_camera():
         assert px[0] > 150 and px[1] < 60, y
     corner = img.getpixel(((w - cam_w) // 2 + 20, band // 2))   # band drawn over the camera
     assert corner[0] < 60
+
+
+class _RecordingDraw:
+    """An ImageDraw that records each draw.text call as (text, x, y, font)."""
+
+    def __init__(self, img):
+        self._draw = ImageDraw.Draw(img)
+        self.texts = []
+
+    def text(self, xy, text, *args, font=None, **kwargs):
+        self.texts.append((text, xy[0], xy[1], font))
+        return self._draw.text(xy, text, *args, font=font, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._draw, name)
+
+
+def _success_texts(flag: str) -> list:
+    d = _display("success")
+    img = Image.new("RGB", (display_manager.WIDTH, display_manager.HEIGHT), display_manager.DARK)
+    draw = _RecordingDraw(img)
+    d._draw_success(draw, {"team": "anael", "puzzle": 1, "flag": flag}, 0.0)
+    return draw.texts
+
+
+def test_success_screen_shows_the_flag_large_in_the_top_right():
+    texts = _success_texts("FLAG{top_right}")
+    flag = [t for t in texts if t[0] == "FLAG{top_right}"]
+    assert len(flag) == 1
+    _, x, y, font = flag[0]
+    assert font is display_manager.FONT_FLAG
+    w = display_manager.WIDTH
+    probe = ImageDraw.Draw(Image.new("RGB", (w, 10)))
+    right = x + probe.textbbox((0, 0), "FLAG{top_right}", font=font)[2]
+    assert right == w - display_manager._s(40)                # right-aligned
+    congrats_y = next(t[2] for t in texts if "CONGRATULATIONS" in t[0])
+    assert y < congrats_y                                      # above the banner
+
+
+def test_success_screen_without_a_flag_draws_none():
+    texts = [t[0] for t in _success_texts("")]
+    assert "FLAG" not in texts
+
+
+def test_camera_feed_keeps_the_full_lores_frame():
+    import base64
+    from io import BytesIO
+
+    import numpy as np
+
+    thumb = daemon._thumb_b64(np.zeros((480, 640, 3), dtype=np.uint8))
+    assert Image.open(BytesIO(base64.b64decode(thumb))).size == (640, 480)
