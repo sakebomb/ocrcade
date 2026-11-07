@@ -24,6 +24,14 @@ from .schema import CardReading
 
 log = logging.getLogger("ocrcade.pipeline")
 
+# The "READY YOUR CODE" screen's bottom line: what the player should do next.
+SKIPS_BEFORE_HINT = 3      # reads skipped for "no text" in a row (~4 s) before HINT_CLOSER
+HINT_SHOW = "Hold your code up to the camera"
+HINT_STILL = "Hold still..."
+HINT_BLURRY = "Too blurry. Hold the paper still."
+HINT_CLOSER = "Can't see your code. Hold it closer so it fills the camera."
+HINT_READING = "Reading your code..."
+
 
 class State(StrEnum):
     IDLE = "idle"
@@ -36,7 +44,7 @@ class UI(Protocol):
     def thumb(self, frame) -> None: ...
     def await_card(self) -> None: ...
     def puzzle_locked(self, puzzle: int, lang: str) -> None: ...
-    def await_code(self, puzzle: int, lang: str, progress: float) -> None: ...
+    def await_code(self, puzzle: int, lang: str, progress: float, hint: str = "") -> None: ...
     def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None: ...
     def feedback(self, title: str, detail: str) -> None: ...
 
@@ -98,6 +106,7 @@ class Pipeline:
         self._clear_run = 0
         self._stray_id: int | None = None
         self._stray_run = 0
+        self._skips = 0            # reads skipped in a row because no text was in view
         self._t_state = 0.0
         self._cooldown_until = 0.0
         self._pending: CardReading | None = None
@@ -172,6 +181,7 @@ class Pipeline:
         self.state = State.SELECTED
         self._t_state = self._now()
         self._clear_run = 0
+        self._skips = 0
         self.gate.reset()
         log.info(f"SELECTED puzzle={m.puzzle} lang={m.lang} (marker {m.marker_id})")
         self.ui.puzzle_locked(m.puzzle, m.lang)
@@ -199,8 +209,11 @@ class Pipeline:
         # An empty scene (the room, a bare table) is sharp and still too, so the gate
         # fires on it. That is not a failed read: keep asking for code, no error.
         if not self.reader.sees_text(main):
+            self._skips += 1
             self.gate.reset()
             return
+        self._skips = 0
+        self.ui.await_code(self._puzzle, self._lang, 1.0, HINT_READING)
         r = self.reader.read_code(main)
         if not r.readable:
             log.info(f"code not read: {r.reason}")
@@ -264,7 +277,18 @@ class Pipeline:
         if not self._confirmed() or not card_gone:
             self.ui.puzzle_locked(self._puzzle, self._lang)
         else:
-            self.ui.await_code(self._puzzle, self._lang, progress)
+            self.ui.await_code(self._puzzle, self._lang, progress, self._code_hint(progress))
+
+    def _code_hint(self, progress: float) -> str:
+        """What the player should do next, from what the camera last saw."""
+        if self._skips >= SKIPS_BEFORE_HINT:
+            return HINT_CLOSER
+        last = self.gate.last
+        if last.get("blur", self.gate.blur_min) < self.gate.blur_min:
+            return HINT_BLURRY
+        if progress > 0:
+            return HINT_STILL
+        return HINT_SHOW
 
     def _ready_for_code(self, marker) -> bool:
         """The puzzle card is not the code. Confirm it, wait it out, then settle."""
@@ -283,6 +307,7 @@ class Pipeline:
         self._clear_run = 0
         self._stray_id = None
         self._stray_run = 0
+        self._skips = 0
 
     def _to_idle(self) -> None:
         self.state = State.IDLE

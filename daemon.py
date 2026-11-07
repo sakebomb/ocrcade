@@ -97,11 +97,9 @@ class ServerUI:
         _post(self.preview_url, {"ocr_lines": lines, "stability": 0.0, "max_stability": 1.0,
                                  "source_type": "puzzle_seen"}, timeout=1)
 
-    def await_code(self, puzzle: int, lang: str, progress: float) -> None:
-        lines = ["READY", "YOUR CODE"]
-        if progress > 0:
-            lines.append("HOLD STEADY")
-        _post(self.preview_url, {"ocr_lines": lines, "stability": progress,
+    def await_code(self, puzzle: int, lang: str, progress: float, hint: str = "") -> None:
+        # The display shows the live camera big on this screen, with the hint under it.
+        _post(self.preview_url, {"ocr_lines": ["READY YOUR CODE", hint], "stability": progress,
                                  "max_stability": 1.0, "source_type": "ready_code"}, timeout=1)
 
     def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None:

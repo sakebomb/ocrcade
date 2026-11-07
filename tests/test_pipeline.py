@@ -31,7 +31,8 @@ class FakeMarkers:
 class FakeGate:
     def __init__(self):
         self.fire_next = False
-        self.last = {"has_text": False, "progress": 0.0}
+        self.blur_min = 60.0
+        self.last = {"has_text": False, "progress": 0.0, "blur": 100.0}
         self.resets = 0
 
     def update(self, _frame):
@@ -59,6 +60,7 @@ class FakeReader:
 class FakeUI:
     def __init__(self):
         self.calls = []
+        self.hints = []
 
     def thumb(self, _f):
         self.calls.append(("thumb",))
@@ -69,8 +71,9 @@ class FakeUI:
     def puzzle_locked(self, puzzle, lang):
         self.calls.append(("puzzle_locked", puzzle, lang))
 
-    def await_code(self, puzzle, lang, _prog):
+    def await_code(self, puzzle, lang, _prog, hint=""):
         self.calls.append(("await_code", puzzle, lang))
+        self.hints.append(hint)
 
     def readback(self, puzzle, lang, team, code):
         self.calls.append(("readback", puzzle, lang, team, code))
@@ -329,3 +332,54 @@ def test_task_stays_up_while_the_puzzle_card_is_held():
     assert h.ui.calls[-1] == ("puzzle_locked", 2, "python")
     h.tick()
     assert h.ui.calls[-1] == ("await_code", 2, "python")
+
+
+def _waiting_for_code(reader):
+    h = Harness(reader)
+    h.select(FakeMarker(4, 2, "python"))
+    h.markers.current = None
+    h.tick()                                   # card gone: "READY YOUR CODE"
+    return h
+
+
+def test_ready_screen_asks_for_code_by_default():
+    h = _waiting_for_code(FakeReader(_readable("x")))
+    assert h.ui.hints[-1] == "Hold your code up to the camera"
+
+
+def test_ready_screen_says_when_the_frame_is_blurry():
+    h = _waiting_for_code(FakeReader(_readable("x")))
+    h.gate.last = {"has_text": True, "progress": 0.0, "blur": 30.0}
+    h.tick()
+    assert h.ui.hints[-1] == "Too blurry. Hold the paper still."
+
+
+def test_repeated_skipped_reads_tell_the_player_to_move_closer():
+    reader = FakeReader(_readable("x"), text_in_view=False)
+    h = _waiting_for_code(reader)
+    for _ in range(2):
+        h.show_code()
+    assert "closer" not in h.ui.hints[-1]      # two skips: not yet
+    h.show_code()
+    h.tick()
+    assert h.ui.hints[-1] == "Can't see your code. Hold it closer so it fills the camera."
+    assert reader.calls == 0
+
+
+def test_text_in_view_clears_the_move_closer_hint():
+    reader = FakeReader(_readable("# team: Anael\nx"), text_in_view=False)
+    h = _waiting_for_code(reader)
+    for _ in range(3):
+        h.show_code()
+    reader.text_in_view = True
+    reader.reading = CardReading.unreadable("blurry", "fake")
+    h.show_code()
+    h.tick()
+    assert "closer" not in h.ui.hints[-1]
+
+
+def test_ready_screen_says_reading_while_the_reader_works():
+    reader = FakeReader(_readable("# team: Anael\nx"))
+    h = _waiting_for_code(reader)
+    h.show_code()
+    assert "Reading your code..." in h.ui.hints
