@@ -107,6 +107,8 @@ FAIL_RESET        = 5    # seconds on FAILURE/PARSE_ERROR before returning to at
 # hint sit on dark bands over its top and bottom edges.
 READY_CAMERA_W, READY_CAMERA_H = _s(1440), _s(1080)
 READY_BAND        = _s(120)
+CORNER_CAMERA     = (_s(320), _s(240))   # task screens
+MAIN_CAMERA       = (_s(480), _s(360))   # main page: clears the puzzle list
 SCANNING_TIMEOUT  = 4.0  # seconds without a preview ping → return to attract
 
 # Points awarded per puzzle (shown on success screen)
@@ -350,8 +352,7 @@ class Display:
             draw = ImageDraw.Draw(img)
 
             if state == 'attract':
-                self._draw_attract(draw, elapsed)
-                self._draw_camera_thumb(img, draw)
+                self._draw_main_page(img, draw, elapsed)
             elif state == 'scanning' and data.get('source_type') == 'ready_code':
                 self._draw_ready_screen(img, draw, data, elapsed)
                 if time.time() - last_preview > SCANNING_TIMEOUT:
@@ -523,6 +524,11 @@ class Display:
             y += _s(56)
         blink = int(elapsed * 2) % 2 == 0
         self._centered_text(draw, hint, HEIGHT - _s(140), AMBER if blink else AMBER_DIM, FONT_MD)
+
+    def _draw_main_page(self, img: Image.Image, draw: ImageDraw.ImageDraw, elapsed: float):
+        """The puzzle list, with the live camera in the top-right corner."""
+        self._draw_attract(draw, elapsed)
+        self._draw_camera_thumb(img, draw, size=MAIN_CAMERA)
 
     def _draw_ready_screen(self, img: Image.Image, draw: ImageDraw.ImageDraw, data: dict,
                            elapsed: float):
@@ -809,7 +815,7 @@ class Display:
     # ── Helpers ──────────────────────────────────────────────────────────────────
 
     def _draw_camera_thumb(self, img: Image.Image, draw: ImageDraw.ImageDraw,
-                           large: bool = False):
+                           large: bool = False, size: tuple[int, int] = CORNER_CAMERA):
         """Overlay the live camera thumbnail: top-right corner, or large and centered
         on the "ready your code" screen so players can frame their page."""
         with self._lock:
@@ -818,7 +824,7 @@ class Display:
             return
         try:
             thumb_img = Image.open(BytesIO(base64.b64decode(thumb_b64))).convert('RGB')
-            tw, th = (READY_CAMERA_W, READY_CAMERA_H) if large else (_s(320), _s(240))
+            tw, th = (READY_CAMERA_W, READY_CAMERA_H) if large else size
             thumb_img = thumb_img.resize((tw, th), Image.Resampling.LANCZOS)
             pad = _s(12)
             tx = (WIDTH - tw) // 2 if large else WIDTH - tw - pad
