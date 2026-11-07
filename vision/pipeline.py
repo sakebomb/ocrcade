@@ -78,7 +78,8 @@ class Pipeline:
                  marker_stable_frames: int = 2, roster_cutoff: float = 0.6,
                  select_timeout_s: float = 60.0, readback_timeout_s: float = 30.0,
                  cooldown_s: float = 20.0, settle_s: float = 0.0, clear_frames: int = 1,
-                 confirm_s: float = 0.0, now: Callable[[], float] = time.monotonic):
+                 confirm_s: float = 0.0, now: Callable[[], float] = time.monotonic,
+                 captures=None):
         self.markers = markers
         self.gate = gate
         self.reader = reader
@@ -96,6 +97,7 @@ class Pipeline:
         self.clear_frames = clear_frames
         self.confirm_s = confirm_s
         self._now = now
+        self.captures = captures      # CaptureLog or None: saves each read's frame
 
         self.state = State.IDLE
         self._puzzle: int | None = None
@@ -110,6 +112,7 @@ class Pipeline:
         self._t_state = 0.0
         self._cooldown_until = 0.0
         self._pending: CardReading | None = None
+        self._pending_image: str | None = None   # where the pending read's frame was saved
 
     # --- one scan tick: lores for detect/gate, grab_main() for the hi-res read ---
     def on_frame(self, lores, grab_main: Callable[[], object]) -> State:
@@ -215,12 +218,13 @@ class Pipeline:
         self._skips = 0
         self.ui.await_code(self._puzzle, self._lang, 1.0, HINT_READING)
         r = self.reader.read_code(main)
+        team = resolve_team(r.code, self.roster, self.roster_cutoff) if r.readable else None
+        image = self._capture(main, r, team)
         if not r.readable:
             log.info(f"code not read: {r.reason}")
             self.ui.feedback("CODE NOT READ", "Hold the paper so it fills the camera")
             self.gate.reset()                     # stay SELECTED — let them retry
             return
-        team = resolve_team(r.code, self.roster, self.roster_cutoff)
         if team is None:
             self.ui.feedback("TEAM NOT RECOGNISED", "add '# team: NAME' (registered)")
             self.gate.reset()
@@ -228,6 +232,7 @@ class Pipeline:
         self._pending = CardReading(readable=True, puzzle=self._puzzle, lang=self._lang,
                                     team=team, code=r.code, backend=r.backend,
                                     latency_s=r.latency_s)
+        self._pending_image = image
         self.state = State.READBACK
         self._t_state = self._now()
         self.confirm.arm()
@@ -239,10 +244,17 @@ class Pipeline:
         if p is not None:
             log.info(f"submit P{p.puzzle} team={p.team!r} ({len(p.code or '')} chars)")
             self.submit({"puzzle": p.puzzle, "team": p.team, "lang": p.lang, "code": p.code})
+            if self.captures is not None:
+                self.captures.mark_submitted(self._pending_image)
         self._cooldown()
         self._to_idle()
 
     # --- helpers ---
+    def _capture(self, main, r: CardReading, team: str | None) -> str | None:
+        if self.captures is None:
+            return None
+        return self.captures.save(main, r, self._puzzle, self._lang, team)
+
     def _stable_marker(self, lores):
         m = self.markers.pick(lores)
         mid = m.marker_id if m else None
@@ -312,6 +324,7 @@ class Pipeline:
     def _to_idle(self) -> None:
         self.state = State.IDLE
         self._puzzle = self._lang = self._sel_marker_id = self._pending = None
+        self._pending_image = None
         self._select_reset()
         self.ui.await_card()
 

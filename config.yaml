@@ -66,6 +66,11 @@ roster:
   names: []             # registered team names (inline). Or set `path:` to a newline file
   # path: "teams_roster.txt"
 
+captures:               # every frame sent to a code reader, plus what it read (training data)
+  enabled: true
+  dir: "~/ocrcade-captures"   # <dir>/<date>/<time>-p<puzzle>-<n>.jpg + reads.jsonl
+  min_free_mb: 1024     # stop saving when the disk has less free than this
+
 readback:
   hold_s: 4.0           # Phase B: auto-submit after showing the read-back this long
   timeout_s: 30         # max wait for a confirm before returning to idle

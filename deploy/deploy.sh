@@ -65,6 +65,13 @@ for u in "${units[@]}"; do
 done
 if (( reload )); then sudo systemctl daemon-reload; fi
 
+journald_conf=/etc/systemd/journald.conf.d/ocrcade.conf
+if ! cmp -s "$path/deploy/journald-ocrcade.conf" "$journald_conf"; then
+  echo "installing changed journald config"
+  sudo install -D -m 0644 "$path/deploy/journald-ocrcade.conf" "$journald_conf"
+  sudo systemctl restart systemd-journald
+fi
+
 sudo systemctl restart "${units[@]}"
 
 for _ in $(seq 1 20); do
