@@ -2,6 +2,7 @@
 import threading
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 import daemon
@@ -120,6 +121,7 @@ def test_daemon_sends_the_task_when_a_card_locks(monkeypatch):
     ui.puzzle_locked(6, "python")
     ui.await_card()
     assert sent[0]["ocr_lines"] == ["PUZZLE 2", "PYTHON", *task_lines(2)]
+    assert sent[0]["puzzle"] == 2
     assert sent[1]["ocr_lines"][1] == "CAMERA GAME"
     assert sent[2]["source_type"] == "await_card"
 
@@ -130,6 +132,7 @@ def test_daemon_sends_the_ready_screen_hint(monkeypatch):
     daemon.ServerUI("http://exec").await_code(1, "python", 0.0, "Too blurry. Hold the paper still.")
     assert sent[0]["ocr_lines"] == ["READY YOUR CODE", "Too blurry. Hold the paper still."]
     assert sent[0]["source_type"] == "ready_code"
+    assert sent[0]["puzzle"] == 1
 
 
 def test_ready_screen_puts_title_and_hint_over_a_full_height_camera():
@@ -251,3 +254,91 @@ def test_main_page_camera_is_half_again_as_big_and_clears_the_text(monkeypatch):
     for right, y0, y1 in spans:                          # no text under the camera
         if y0 < top + ch and y1 > top:
             assert right < left, (right, y0)
+
+
+def _red_camera(d) -> None:
+    import base64
+    from io import BytesIO
+
+    buf = BytesIO()
+    Image.new("RGB", (640, 480), (200, 0, 0)).save(buf, "JPEG")
+    d._thumb_b64 = base64.b64encode(buf.getvalue()).decode()
+
+
+def _cell_corner(rows, ch, x, y, cell):
+    r = next(i for i, row in enumerate(rows) if ch in row)
+    return x + rows[r].index(ch) * cell + 3, y + r * cell + 3   # clear of the letter
+
+
+def test_puzzle_3_task_screen_draws_the_maze_left_of_the_text(monkeypatch):
+    dm = display_manager
+    monkeypatch.setattr(dm, "WIDTH", dm.HEIGHT * 16 // 9)   # kepler's 16:9 layout
+    d = _display("scanning")
+    img = Image.new("RGB", (dm.WIDTH, dm.HEIGHT), dm.DARK)
+    draw = _RecordingDraw(img)
+    lines = ["PUZZLE 3", "PYTHON", *task_lines(3)]
+    d._draw_task(draw, {"ocr_lines": lines, "puzzle": 3}, 0.0)
+
+    rows, cell = dm._maze_rows(3), dm.TASK_MAZE_CELL
+    top = (dm.HEIGHT - len(rows) * cell) // 2
+    assert img.getpixel((dm.MAZE_LEFT + cell // 2, top + cell // 2)) == dm.GREEN   # corner wall
+    assert img.getpixel(_cell_corner(rows, "S", dm.MAZE_LEFT, top, cell)) == dm.AMBER
+    assert img.getpixel(_cell_corner(rows, "E", dm.MAZE_LEFT, top, cell)) == dm.CYAN
+    maze_right = dm.MAZE_LEFT + len(rows[0]) * cell
+    drawn = [t for t in draw.texts if t[0] in lines]
+    assert [t[0] for t in drawn] == lines
+    for text, x, _, font in drawn:                           # all text right of the maze
+        assert x > maze_right, text
+        assert x + draw.textbbox((0, 0), text, font=font)[2] < dm.WIDTH, text
+
+
+@pytest.mark.parametrize("puzzle", [1, 4])
+def test_other_puzzles_show_no_maze(puzzle):
+    dm = display_manager
+    assert dm._maze_rows(puzzle) is None
+    d = _display("scanning")
+    img = Image.new("RGB", (dm.WIDTH, dm.HEIGHT), dm.DARK)
+    lines = ["PUZZLE", "PYTHON", *task_lines(puzzle)]
+    d._draw_task(ImageDraw.Draw(img), {"ocr_lines": lines, "puzzle": puzzle}, 0.0)
+    top = (dm.HEIGHT - 15 * dm.TASK_MAZE_CELL) // 2
+    assert img.getpixel((dm.MAZE_LEFT + 10, top + 10)) == dm.DARK
+
+
+def test_puzzle_3_ready_screen_puts_the_maze_left_and_the_camera_right(monkeypatch):
+    dm = display_manager
+    monkeypatch.setattr(dm, "WIDTH", dm.HEIGHT * 16 // 9)
+    d = _display("scanning")
+    _red_camera(d)
+    img = Image.new("RGB", (dm.WIDTH, dm.HEIGHT), dm.DARK)
+    data = {"ocr_lines": ["READY YOUR CODE", "Hold still..."], "puzzle": 3}
+    d._draw_ready_screen(img, ImageDraw.Draw(img), data, 0.0)
+
+    rows, cell = dm._maze_rows(3), dm.READY_MAZE_CELL
+    top = dm.READY_BAND + (dm.HEIGHT - 2 * dm.READY_BAND - len(rows) * cell) // 2
+    assert img.getpixel(_cell_corner(rows, "S", dm.MAZE_LEFT, top, cell)) == dm.AMBER
+    cw, ch = dm.READY_MAZE_CAMERA
+    cam_x = dm.WIDTH - cw - dm._s(30)
+    cam_y = dm.READY_BAND + (dm.HEIGHT - 2 * dm.READY_BAND - ch) // 2
+    assert dm.MAZE_LEFT + len(rows[0]) * cell < cam_x                     # side by side
+    assert dm.READY_BAND <= cam_y and cam_y + ch <= dm.HEIGHT - dm.READY_BAND
+    px = img.getpixel((cam_x + cw // 2, cam_y + ch // 2))
+    assert px[0] > 150 and px[1] < 60                                    # camera is there
+
+
+def test_an_unreadable_maze_file_draws_no_maze(monkeypatch, tmp_path):
+    monkeypatch.setattr(display_manager, "MAZE_FILES", {3: tmp_path / "missing.txt"})
+    assert display_manager._maze_rows(3) is None
+
+
+def test_preview_passes_the_puzzle_number_to_the_display(monkeypatch):
+    import server
+
+    seen = []
+    monkeypatch.setattr(server, "OPERATOR_TOKEN", "t")
+    monkeypatch.setattr(server.display, "preview", lambda *a: seen.append(a))
+    client = server.app.test_client()
+    for puzzle in (3, "3"):
+        r = client.post("/preview", json={"source_type": "ready_code", "puzzle": puzzle},
+                        headers={"X-Operator-Token": "t"})
+        assert r.status_code == 200
+    assert [args[-1] for args in seen] == [3, None]                     # ints only

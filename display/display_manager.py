@@ -10,6 +10,7 @@ State machine: ATTRACT → RECEIVED → EXECUTING → SUCCESS/FAIL → ATTRACT
 
 import base64
 import fcntl
+import functools
 import json
 import logging
 import math
@@ -110,6 +111,31 @@ READY_BAND        = _s(120)
 CORNER_CAMERA     = (_s(320), _s(240))   # task screens
 MAIN_CAMERA       = (_s(480), _s(360))   # main page: clears the puzzle list
 SCANNING_TIMEOUT  = 4.0  # seconds without a preview ping → return to attract
+
+# Mazes drawn on the left of a puzzle's task and "ready your code" screens. Puzzle 3
+# only: puzzle 4's maze changes every reset and is meant to be solved by code.
+MAZE_FILES = {3: Path(__file__).resolve().parent.parent / 'puzzles' / 'level3' / 'maze_fixed.txt'}
+MAZE_LEFT         = _s(60)
+TASK_MAZE_CELL    = _s(36)                 # 15 cells: 540 px, text centers to its right
+READY_MAZE_CELL   = _s(46)                 # 15 cells: 690 px, left of the camera
+READY_MAZE_CAMERA = (_s(1100), _s(825))    # 4:3, right of the maze
+
+
+@functools.cache
+def _load_maze(path: Path) -> list[str] | None:
+    """A maze file's rows, read once. None (and a warning) when it cannot be read."""
+    try:
+        rows = [row for row in path.read_text().splitlines() if row.strip()]
+    except OSError as e:
+        log.warning(f"maze file unreadable, not drawn: {e}")
+        return None
+    return rows or None
+
+
+def _maze_rows(puzzle: int | None) -> list[str] | None:
+    """The maze shown for this puzzle, as text rows, or None."""
+    path = MAZE_FILES.get(puzzle)
+    return _load_maze(path) if path else None
 
 # Points awarded per puzzle (shown on success screen)
 PUZZLE_POINTS = {0: 0, 1: 100, 2: 350, 3: 750, 4: 900, 5: 50, 6: 200}
@@ -249,10 +275,11 @@ class Display:
         self._set('failure', {'team': team, 'message': message, 'ocr': ocr})
 
     def preview(self, ocr_lines: list[str], stability: float, max_stability: float,
-                source_type: str = 'unknown'):
+                source_type: str = 'unknown', puzzle: int | None = None):
         """Vision Pi is scanning — show live OCR preview with stability bar.
 
         While it waits for a puzzle card (source 'await_card') the main page shows.
+        `puzzle` is the selected puzzle, when there is one (its maze may be drawn).
         """
         with self._lock:
             if source_type == 'await_card':
@@ -270,6 +297,7 @@ class Display:
                     'stability':    stability,
                     'max_stability': max_stability,
                     'source_type':  source_type,
+                    'puzzle':       puzzle,
                 }
                 self._last_preview = time.time()
 
@@ -514,16 +542,22 @@ class Display:
             self._draw_cue(draw, data, GREEN)
             return
         title, subtitle, *task, hint = lines
+        left = 0
+        maze = _maze_rows(data.get('puzzle'))
+        if maze:
+            top = (HEIGHT - len(maze) * TASK_MAZE_CELL) // 2
+            left = self._draw_maze(draw, maze, MAZE_LEFT, top, TASK_MAZE_CELL) + _s(40)
         y = _s(140)
-        self._centered_text(draw, title, y, AMBER, FONT_XL)
+        self._centered_text(draw, title, y, AMBER, FONT_XL, left=left)
         y += _s(170)
-        self._centered_text(draw, subtitle, y, WHITE, FONT_LG)
+        self._centered_text(draw, subtitle, y, WHITE, FONT_LG, left=left)
         y += _s(130)
         for line in task:
-            self._centered_text(draw, line, y, GREEN, FONT_MD)
+            self._centered_text(draw, line, y, GREEN, FONT_MD, left=left)
             y += _s(56)
         blink = int(elapsed * 2) % 2 == 0
-        self._centered_text(draw, hint, HEIGHT - _s(140), AMBER if blink else AMBER_DIM, FONT_MD)
+        self._centered_text(draw, hint, HEIGHT - _s(140), AMBER if blink else AMBER_DIM, FONT_MD,
+                            left=left)
 
     def _draw_main_page(self, img: Image.Image, draw: ImageDraw.ImageDraw, elapsed: float):
         """The puzzle list, with the live camera in the top-right corner."""
@@ -532,8 +566,18 @@ class Display:
 
     def _draw_ready_screen(self, img: Image.Image, draw: ImageDraw.ImageDraw, data: dict,
                            elapsed: float):
-        """The live camera at full screen height, then the title and hint over it."""
-        self._draw_camera_thumb(img, draw, large=True)
+        """The live camera at full screen height, then the title and hint over it. A
+        puzzle with a maze shows the maze on the left and a smaller camera on the right."""
+        maze = _maze_rows(data.get('puzzle'))
+        if maze:
+            middle = HEIGHT - 2 * READY_BAND
+            cw, ch = READY_MAZE_CAMERA
+            self._paste_camera(img, WIDTH - cw - _s(30), READY_BAND + (middle - ch) // 2, cw, ch)
+            top = READY_BAND + (middle - len(maze) * READY_MAZE_CELL) // 2
+            self._draw_maze(draw, maze, MAZE_LEFT, top, READY_MAZE_CELL)
+        else:
+            self._paste_camera(img, (WIDTH - READY_CAMERA_W) // 2, 0,
+                               READY_CAMERA_W, READY_CAMERA_H)
         self._draw_ready(draw, data, elapsed)
 
     def _draw_ready(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
@@ -814,35 +858,57 @@ class Display:
 
     # ── Helpers ──────────────────────────────────────────────────────────────────
 
-    def _draw_camera_thumb(self, img: Image.Image, draw: ImageDraw.ImageDraw,
-                           large: bool = False, size: tuple[int, int] = CORNER_CAMERA):
-        """Overlay the live camera thumbnail: top-right corner, or large and centered
-        on the "ready your code" screen so players can frame their page."""
+    def _paste_camera(self, img: Image.Image, x: int, y: int, w: int, h: int) -> bool:
+        """Paste the latest camera frame scaled to w x h at (x, y). False when there is
+        no usable frame yet."""
         with self._lock:
             thumb_b64 = self._thumb_b64
         if not thumb_b64:
-            return
+            return False
         try:
             thumb_img = Image.open(BytesIO(base64.b64decode(thumb_b64))).convert('RGB')
-            tw, th = (READY_CAMERA_W, READY_CAMERA_H) if large else size
-            thumb_img = thumb_img.resize((tw, th), Image.Resampling.LANCZOS)
-            pad = _s(12)
-            tx = (WIDTH - tw) // 2 if large else WIDTH - tw - pad
-            ty = 0 if large else pad
-            img.paste(thumb_img, (tx, ty))
-            if large:
-                return
-            draw.rectangle([tx - 2, ty - 2, tx + tw + 2, ty + th + 2],
-                           outline=CYAN, width=2)
-            draw.text((tx, ty + th + _s(4)), 'CAMERA', font=FONT_SM, fill=CYAN)
+            img.paste(thumb_img.resize((w, h), Image.Resampling.LANCZOS), (x, y))
+            return True
         except Exception:
-            pass
+            return False
+
+    def _draw_camera_thumb(self, img: Image.Image, draw: ImageDraw.ImageDraw,
+                           size: tuple[int, int] = CORNER_CAMERA):
+        """The live camera in a labelled frame in the top-right corner."""
+        tw, th = size
+        pad = _s(12)
+        tx, ty = WIDTH - tw - pad, pad
+        if not self._paste_camera(img, tx, ty, tw, th):
+            return
+        draw.rectangle([tx - 2, ty - 2, tx + tw + 2, ty + th + 2], outline=CYAN, width=2)
+        draw.text((tx, ty + th + _s(4)), 'CAMERA', font=FONT_SM, fill=CYAN)
+
+    def _draw_maze(self, draw: ImageDraw.ImageDraw, rows: list[str], x: int, y: int,
+                   cell: int) -> int:
+        """Walls as solid blocks, S and E as labelled colored cells. Returns the right edge."""
+        font = FONT_MD if cell >= _s(44) else FONT_SM
+        for r, row in enumerate(rows):
+            for c, ch in enumerate(row):
+                x0, y0 = x + c * cell, y + r * cell
+                box = [x0, y0, x0 + cell - 1, y0 + cell - 1]
+                if ch == '#':
+                    draw.rectangle(box, fill=GREEN)
+                elif ch in 'SE':
+                    draw.rectangle(box, fill=AMBER if ch == 'S' else CYAN)
+                    tb = draw.textbbox((0, 0), ch, font=font)
+                    draw.text((x0 + (cell - (tb[2] - tb[0])) // 2 - tb[0],
+                               y0 + (cell - (tb[3] - tb[1])) // 2 - tb[1]),
+                              ch, font=font, fill=DARK)
+        return x + max(len(row) for row in rows) * cell
 
     def _centered_text(self, draw: ImageDraw.ImageDraw, text: str, y: int,
-                       color: tuple, font: ImageFont.FreeTypeFont):
+                       color: tuple, font: ImageFont.FreeTypeFont,
+                       left: int = 0, right: int | None = None):
+        """Draw text centered between `left` and `right` (the whole width by default)."""
+        right = WIDTH if right is None else right
         bbox = draw.textbbox((0, 0), text, font=font)
         w = bbox[2] - bbox[0]
-        x = (WIDTH - w) // 2
+        x = left + (right - left - w) // 2
         draw.text((x, y), text, font=font, fill=color)
 
     def _border(self, draw: ImageDraw.ImageDraw, color: tuple, width: int = 4):

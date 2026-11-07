@@ -219,7 +219,9 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
 
 **During play** — a team:
 1. grabs the **Puzzle·Lang card** and shows it → screen shows the puzzle's task
-   (`game/puzzle_tasks.py`); once the card is taken away, *"READY YOUR CODE"*
+   (`game/puzzle_tasks.py`); once the card is taken away, *"READY YOUR CODE"*.
+   Puzzle 3 also draws its maze on the left of both screens (`MAZE_FILES` in
+   `display/display_manager.py`); puzzle 4's maze is never shown
 2. shows their **code** (with `# team: NAME`) → screen shows the read-back
 3. checks it and presses **GO** → it runs and scores; or re-shows to re-read.
 

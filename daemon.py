@@ -96,12 +96,13 @@ class ServerUI:
         subtitle = "CAMERA GAME" if puzzle in CAMERA_PUZZLES else lang.upper()
         lines = [f"PUZZLE {puzzle}", subtitle, *task_lines(puzzle)]
         _post(self.preview_url, {"ocr_lines": lines, "stability": 0.0, "max_stability": 1.0,
-                                 "source_type": "puzzle_seen"}, timeout=1)
+                                 "source_type": "puzzle_seen", "puzzle": puzzle}, timeout=1)
 
     def await_code(self, puzzle: int, lang: str, progress: float, hint: str = "") -> None:
         # The display shows the live camera big on this screen, with the hint under it.
         _post(self.preview_url, {"ocr_lines": ["READY YOUR CODE", hint], "stability": progress,
-                                 "max_stability": 1.0, "source_type": "ready_code"}, timeout=1)
+                                 "max_stability": 1.0, "source_type": "ready_code",
+                                 "puzzle": puzzle}, timeout=1)
 
     def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None:
         lines = [f"Puzzle {puzzle} · {lang} · team {team}", "READ:"]
