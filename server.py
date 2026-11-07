@@ -22,7 +22,7 @@ from flask import Flask, jsonify, request
 
 from display.display_manager import Display
 from game.maze_generator import generate_maze
-from game.output_validator import set_level4_maze, validate
+from game.output_validator import maze_walk_for, set_level4_maze, validate
 from game.rtb_submitter import is_solved
 from game.rtb_submitter import submit as rtb_submit
 from game.sandbox_runner import run as sandbox_run
@@ -293,7 +293,7 @@ def _run_submission(puzzle: int, team: str, lang: str, code: str, outcome: Outco
             _release(team, puzzle)
 
 
-def _score(puzzle: int, team: str, message: str, outcome: Outcome) -> None:
+def _score(puzzle: int, team: str, message: str, outcome: Outcome, walk=None) -> None:
     """Score and paint success together, so a timeout cannot land in between."""
     def finish() -> None:
         if puzzle == 0:
@@ -302,7 +302,7 @@ def _score(puzzle: int, team: str, message: str, outcome: Outcome) -> None:
             ok, rtb_msg = rtb_submit(team, puzzle, message)
             log.info(f"RTB submit result: {ok} – {rtb_msg}")
             _append_solved_log(team, puzzle)
-        display.success(team, puzzle, message)
+        display.success(team, puzzle, message, walk=walk)
 
     outcome.claim(finish)
 
@@ -337,10 +337,11 @@ def _finish_submission(puzzle: int, team: str, lang: str, code: str, outcome: Ou
             lambda: display.executing(result["stdout"], result["stderr"])):
         return
     success, message = validate(puzzle, result["stdout"])
+    walk = maze_walk_for(puzzle, result["stdout"])   # replayed before the result (puzzle 3)
     if success:
-        _score(puzzle, team, message, outcome)
+        _score(puzzle, team, message, outcome, walk)
     else:
-        outcome.claim(lambda: display.failure(team, message))
+        outcome.claim(lambda: display.failure(team, message, walk=walk))
 
 
 def main() -> None:

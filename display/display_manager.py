@@ -120,6 +120,27 @@ TASK_MAZE_CELL    = _s(36)                 # 15 cells: 540 px, text centers to i
 READY_MAZE_CELL   = _s(46)                 # 15 cells: 690 px, left of the camera
 READY_MAZE_CAMERA = (_s(1100), _s(825))    # 4:3, right of the maze
 
+# The walk replayed before a maze puzzle's result: one move per step, never longer
+# than WALK_MAX_S in all, then the outcome holds for WALK_HOLD_S.
+WALK_STEP_S = 0.12
+WALK_MAX_S  = 6.0
+WALK_HOLD_S = 1.5
+WALK_CELL   = _s(60)                       # 15 cells: 900 px, centered under the title
+WALK_TRAIL  = 8                            # most recent cells drawn bright
+
+
+def _walk_moves(walk) -> int:
+    """Moves to animate: each legal step, plus the bump into a wall when there is one."""
+    return len(walk.cells) - 1 + (1 if walk.blocked else 0)
+
+
+def _walk_step_s(walk) -> float:
+    return min(WALK_STEP_S, WALK_MAX_S / max(_walk_moves(walk), 1))
+
+
+def _walk_seconds(walk) -> float:
+    return _walk_moves(walk) * _walk_step_s(walk)
+
 
 @functools.cache
 def _load_maze(path: Path) -> list[str] | None:
@@ -268,11 +289,19 @@ class Display:
     def executing(self, stdout: str, stderr: str):
         self._set('executing', {'stdout': stdout, 'stderr': stderr})
 
-    def success(self, team: str, puzzle: int, flag: str = ''):
-        self._set('success', {'team': team, 'puzzle': puzzle, 'flag': flag})
+    def success(self, team: str, puzzle: int, flag: str = '', walk=None):
+        self._show_result('success', {'team': team, 'puzzle': puzzle, 'flag': flag}, walk)
 
-    def failure(self, team: str, message: str, ocr: str = ''):
-        self._set('failure', {'team': team, 'message': message, 'ocr': ocr})
+    def failure(self, team: str, message: str, ocr: str = '', walk=None):
+        self._show_result('failure', {'team': team, 'message': message, 'ocr': ocr}, walk)
+
+    def _show_result(self, state: str, data: dict, walk) -> None:
+        """Paint a result screen, first replaying the player's maze walk when there is
+        one (a game.output_validator.MazeWalk); the walk screen moves on by itself."""
+        if walk is not None and walk.cells:
+            self._set('maze_walk', {'walk': walk, 'next': (state, data)})
+        else:
+            self._set(state, data)
 
     def preview(self, ocr_lines: list[str], stability: float, max_stability: float,
                 source_type: str = 'unknown', puzzle: int | None = None):
@@ -408,6 +437,10 @@ class Display:
                 self._draw_failure(draw, data, elapsed)
                 if elapsed > FAIL_RESET:
                     self._set('attract', {})
+            elif state == 'maze_walk':
+                self._draw_maze_walk(draw, data['walk'], elapsed)
+                if elapsed > _walk_seconds(data['walk']) + WALK_HOLD_S:
+                    self._set(*data['next'])
             elif state == 'parse_error':
                 self._draw_parse_error(draw, data, elapsed)
                 if elapsed > FAIL_RESET:
@@ -857,6 +890,54 @@ class Display:
                             HEIGHT // 2 + _s(80), WHITE, FONT_SM)
 
     # ── Helpers ──────────────────────────────────────────────────────────────────
+
+    def _draw_maze_walk(self, draw: ImageDraw.ImageDraw, walk, elapsed: float):
+        """The player's path replayed through the maze: an amber dot leaving a trail,
+        then the outcome (E reached, a wall hit, or stopped short of E)."""
+        self._border(draw, AMBER)
+        rows, cells, cell = list(walk.maze), walk.cells, WALK_CELL
+        x, y = (WIDTH - max(len(row) for row in rows) * cell) // 2, _s(130)
+        self._draw_maze(draw, rows, x, y, cell)
+
+        t, last = elapsed / _walk_step_s(walk), len(cells) - 1
+        here = min(int(t), last)
+        inset = cell // 3
+        for k, (r, c) in enumerate(cells[1:here + 1], start=1):
+            draw.rectangle([x + c * cell + inset, y + r * cell + inset,
+                            x + (c + 1) * cell - inset - 1, y + (r + 1) * cell - inset - 1],
+                           fill=AMBER if here - k < WALK_TRAIL else AMBER_DIM)
+
+        done = elapsed >= _walk_seconds(walk)
+        if t < last:                                   # gliding between two cells
+            (r0, c0), (r1, c1), f = cells[here], cells[here + 1], t - here
+        elif walk.blocked and not done:                # nudging into the wall and back
+            (r0, c0), (r1, c1) = cells[last], walk.blocked
+            f = 0.35 * math.sin(math.pi * min(t - last, 1.0))
+        else:
+            (r0, c0), (r1, c1), f = cells[last], cells[last], 0.0
+        cx = x + (c0 + (c1 - c0) * f) * cell + cell / 2
+        cy = y + (r0 + (r1 - r0) * f) * cell + cell / 2
+
+        failed = done and not walk.ok
+        if failed and walk.blocked:
+            br, bc = walk.blocked
+            if 0 <= br < len(rows) and 0 <= bc < len(rows[br]):
+                draw.rectangle([x + bc * cell, y + br * cell, x + (bc + 1) * cell - 1,
+                                y + (br + 1) * cell - 1], outline=RED, width=_s(5))
+        blink = int(elapsed * 4) % 2 == 0
+        color = (GREEN if walk.ok else (RED if blink else RED_DIM)) if done else AMBER
+        rad = cell * 0.35
+        draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=color, outline=DARK,
+                     width=2)
+
+        if not done:
+            title, title_color = 'RUNNING YOUR PATH...', AMBER
+        elif walk.ok:
+            title, title_color = 'YOU MADE IT!', GREEN
+        else:
+            title = 'HIT A WALL' if walk.blocked else 'STOPPED BEFORE E'
+            title_color = RED
+        self._centered_text(draw, title, _s(30), title_color, FONT_LG)
 
     def _paste_camera(self, img: Image.Image, x: int, y: int, w: int, h: int) -> bool:
         """Paste the latest camera frame scaled to w x h at (x, y). False when there is

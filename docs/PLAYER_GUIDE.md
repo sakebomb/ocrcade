@@ -30,6 +30,9 @@ it, runs it, and scores your team. Here's how to get read right the first time.
    - **Right?** Press the **GO button** to submit.
    - **Wrong?** (a typo, an extra `)`, a scrambled maze string, wrong team)
      Don't press GO — just **show your code again** to re-read. Re-reading is free.
+5. **Puzzle 3: watch your path.** After your code runs, a dot walks the moves you
+   printed through the maze. It reaches E, or stops at the wall where your path
+   goes wrong.
 
 ## Showing code so it reads first-try (this is 90% of it)
 

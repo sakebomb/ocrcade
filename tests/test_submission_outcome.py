@@ -81,6 +81,6 @@ def test_a_solve_puts_its_flag_on_the_success_screen(monkeypatch):
     shown = []
     monkeypatch.setattr(server, "rtb_submit", lambda *_a, **_k: (True, "ok"))
     monkeypatch.setattr(server, "_append_solved_log", lambda *_a: None)
-    monkeypatch.setattr(server.display, "success", lambda *a: shown.append(a))
+    monkeypatch.setattr(server.display, "success", lambda *a, **_k: shown.append(a))
     server._score(1, "team", "FLAG{shown}", server.Outcome())
     assert shown == [("team", 1, "FLAG{shown}")]
