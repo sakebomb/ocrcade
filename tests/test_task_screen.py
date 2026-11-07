@@ -218,10 +218,12 @@ def test_camera_feed_keeps_the_full_lores_frame():
     assert Image.open(BytesIO(base64.b64decode(thumb))).size == (640, 480)
 
 
-def test_main_page_camera_is_half_again_as_big_and_clears_the_text():
+def test_main_page_camera_is_half_again_as_big_and_clears_the_text(monkeypatch):
     import base64
     from io import BytesIO
 
+    # The layout is for kepler's 16:9 monitor; a CI runner's framebuffer may be 4:3.
+    monkeypatch.setattr(display_manager, "WIDTH", display_manager.HEIGHT * 16 // 9)
     d = _display("attract")
     d._load_solved_log = lambda: []
     spans = []
