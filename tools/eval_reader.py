@@ -23,6 +23,7 @@ import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from evaluation.captures import earns_flag  # noqa: E402
 from evaluation.dataset import Sample, load_samples  # noqa: E402
 from evaluation.metrics import cer, exact_match  # noqa: E402
 from evaluation.readers import READERS, make_reader  # noqa: E402
@@ -42,20 +43,6 @@ def _args() -> argparse.Namespace:
     return args
 
 
-def _passes(sample: Sample, code: str | None) -> bool:
-    """Would this read earn the flag? The sandbox and validator a submission goes through."""
-    if not code:
-        return False
-    from game.output_validator import validate
-    from game.sandbox_runner import run as sandbox_run
-
-    result = sandbox_run(sample.puzzle, sample.lang, code)
-    if result["timed_out"]:
-        return False
-    ok, _ = validate(sample.puzzle, result["stdout"])
-    return ok
-
-
 def _score(reader, sample: Sample, set_dir: Path, run: bool) -> dict:
     image = cv2.imread(str(set_dir / sample.image))
     if image is None:
@@ -66,7 +53,7 @@ def _score(reader, sample: Sample, set_dir: Path, run: bool) -> dict:
            "exact": exact_match(sample.truth, r.code), "latency_s": round(r.latency_s, 2),
            "abstained": r.code is None, "reason": r.reason, "read": r.code}
     if run:
-        row["passes"] = _passes(sample, r.code)
+        row["passes"] = earns_flag(sample.puzzle, sample.lang, r.code)
     return row
 
 
