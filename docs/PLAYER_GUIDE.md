@@ -30,8 +30,9 @@ it, runs it, and scores your team. Here's how to get read right the first time.
    it read** and the **team it matched**, with a 15-second countdown. When it reaches
    zero your code is submitted. Look it over:
    - **Right?** Just wait for the countdown.
-   - **Wrong?** (a typo, an extra `)`, a scrambled maze string, wrong team) Let it
-     run, then show your puzzle card again and re-show your code. Trying again is free.
+   - **Wrong?** (a typo, an extra `)`, a scrambled maze string, wrong team) Hold up
+     your puzzle card before the countdown ends. The read is thrown away and you start
+     that puzzle again, then re-show your code. Trying again is free.
 5. **Puzzle 3: watch your path.** After your code runs, a dot walks the moves you
    printed through the maze. It reaches E, or stops at the wall where your path
    goes wrong.
@@ -72,5 +73,5 @@ The camera is excellent at code but, like any reader, can slip on:
 |---|---|---|
 | nothing happens on the puzzle card | marker not seen | fill the frame with the card, face it straight, more light |
 | "show your code" but it won't read | code blurry / angled / dim | steady the screen, straighten it, raise brightness |
-| read-back shows a typo | rare character misread | let it submit, then show your card and code again |
+| read-back shows a typo | rare character misread | hold up your puzzle card during the countdown, then re-show your code |
 | wrong / no team matched | team not registered, or name not in code | add `# team: NAME`, and check you're registered |

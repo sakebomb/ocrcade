@@ -125,7 +125,7 @@ class Pipeline:
         elif self.state is State.SELECTED:
             self._tick_selected(lores, grab_main)
         elif self.state is State.READBACK:
-            self._tick_readback()
+            self._tick_readback(lores)
         return self.state
 
     def _tick_idle(self, lores) -> None:
@@ -171,7 +171,15 @@ class Pipeline:
         if fired:
             self._read(grab_main())
 
-    def _tick_readback(self) -> None:
+    def _tick_readback(self, lores) -> None:
+        # A puzzle card held up during the countdown throws the read away and starts
+        # that card over: how a player rejects a misread before it is submitted.
+        m = self._stable_marker(lores)
+        if m is not None:
+            log.info(f"read-back cancelled by card (marker {m.marker_id})")
+            self._pending = self._pending_image = None
+            self._select(m)
+            return
         decision = self.confirm.poll()
         if decision == "go":
             self._do_submit()
@@ -238,6 +246,7 @@ class Pipeline:
         self._pending_image = image
         self.state = State.READBACK
         self._t_state = self._now()
+        self._marker_run_id, self._marker_run = None, 0   # a cancel needs a fresh hold
         self.confirm.arm()
         self.ui.readback(self._puzzle, self._lang, team, r.code or "")
         log.info(f"READBACK puzzle={self._puzzle} team={team!r} ({len(r.code or '')} chars)")

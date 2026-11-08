@@ -116,6 +116,7 @@ CORNER_CAMERA     = (_s(320), _s(240))   # task screens
 MAIN_CAMERA       = (_s(480), _s(360))   # main page: clears the puzzle list
 SCANNING_TIMEOUT  = 4.0  # seconds without a preview ping → return to attract
 READBACK_GRACE_S  = 5.0  # read-back left up this long past its countdown with no result
+READBACK_CANCEL_HINT = 'Wrong? Hold up your puzzle card to try again.'
 
 # Mazes drawn on the left of a puzzle's task and "ready your code" screens. Puzzle 3
 # only: puzzle 4's maze changes every reset and is meant to be solved by code.
@@ -623,6 +624,7 @@ class Display:
                            fill=AMBER)
         label = f'Submitting in {math.ceil(left)}s' if left > 0 else 'Submitting...'
         self._centered_text(draw, label, HEIGHT - _s(68), AMBER, FONT_SM)
+        self._centered_text(draw, READBACK_CANCEL_HINT, bar_y - _s(48), WHITE, FONT_SM)
 
     def _draw_task(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
         """The scanned puzzle and its task. The last line says what to do next."""
