@@ -23,6 +23,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from game.puzzle_tasks import EXAMPLE_FILES, ExampleFile
+
 log = logging.getLogger('ocrcade.display')
 
 # ── Display geometry ────────────────────────────────────────────────────────────
@@ -120,6 +122,9 @@ MAZE_LEFT         = _s(60)
 TASK_MAZE_CELL    = _s(36)                 # 15 cells: 540 px, text centers to its right
 READY_MAZE_CELL   = _s(46)                 # 15 cells: 690 px, left of the camera
 READY_MAZE_CAMERA = (_s(1100), _s(825))    # 4:3, right of the maze
+EXAMPLE_W         = _s(480)                # puzzle input example window, left side
+EXAMPLE_TITLE_H   = _s(48)
+EXAMPLE_LINE_H    = _s(52)
 
 # The walk replayed before a maze puzzle's result: one move per step, never longer
 # than WALK_MAX_S in all, then the outcome holds for WALK_HOLD_S.
@@ -157,6 +162,11 @@ def _load_maze(path: Path) -> list[str] | None:
         log.warning(f"maze file unreadable, not drawn: {e}")
         return None
     return rows or None
+
+
+def _example_height(example: ExampleFile) -> int:
+    """The example file window's height: title, label, its lines, then the note."""
+    return EXAMPLE_TITLE_H + _s(56) + len(example.lines) * EXAMPLE_LINE_H + _s(56)
 
 
 def _maze_rows(puzzle: int | None) -> list[str] | None:
@@ -615,9 +625,13 @@ class Display:
         title, subtitle, *task, hint = lines
         left = 0
         maze = _maze_rows(data.get('puzzle'))
+        example = EXAMPLE_FILES.get(data.get('puzzle'))
         if maze:
             top = (HEIGHT - len(maze) * TASK_MAZE_CELL) // 2
             left = self._draw_maze(draw, maze, MAZE_LEFT, top, TASK_MAZE_CELL) + _s(40)
+        elif example:
+            top = (HEIGHT - _example_height(example)) // 2
+            left = self._draw_example_file(draw, example, MAZE_LEFT, top) + _s(40)
         y = _s(140)
         self._centered_text(draw, title, y, AMBER, FONT_XL, left=left)
         y += _s(170)
@@ -638,14 +652,20 @@ class Display:
     def _draw_ready_screen(self, img: Image.Image, draw: ImageDraw.ImageDraw, data: dict,
                            elapsed: float):
         """The live camera at full screen height, then the title and hint over it. A
-        puzzle with a maze shows the maze on the left and a smaller camera on the right."""
+        puzzle with a maze or an example file shows it on the left and a smaller camera
+        on the right."""
         maze = _maze_rows(data.get('puzzle'))
-        if maze:
+        example = EXAMPLE_FILES.get(data.get('puzzle'))
+        if maze or example:
             middle = HEIGHT - 2 * READY_BAND
             cw, ch = READY_MAZE_CAMERA
             self._paste_camera(img, WIDTH - cw - _s(30), READY_BAND + (middle - ch) // 2, cw, ch)
-            top = READY_BAND + (middle - len(maze) * READY_MAZE_CELL) // 2
-            self._draw_maze(draw, maze, MAZE_LEFT, top, READY_MAZE_CELL)
+            if maze:
+                top = READY_BAND + (middle - len(maze) * READY_MAZE_CELL) // 2
+                self._draw_maze(draw, maze, MAZE_LEFT, top, READY_MAZE_CELL)
+            else:
+                top = READY_BAND + (middle - _example_height(example)) // 2
+                self._draw_example_file(draw, example, MAZE_LEFT, top)
         else:
             self._paste_camera(img, (WIDTH - READY_CAMERA_W) // 2, 0,
                                READY_CAMERA_W, READY_CAMERA_H)
@@ -1019,6 +1039,24 @@ class Display:
                                y0 + (cell - (tb[3] - tb[1])) // 2 - tb[1]),
                               ch, font=font, fill=DARK)
         return x + max(len(row) for row in rows) * cell
+
+    def _draw_example_file(self, draw: ImageDraw.ImageDraw, example: ExampleFile, x: int,
+                           y: int) -> int:
+        """A small file window: the path as its title, numbered lines, then the note.
+        Returns the right edge."""
+        right = x + EXAMPLE_W
+        draw.rectangle([x, y, right, y + EXAMPLE_TITLE_H], fill=CYAN)
+        draw.text((x + _s(16), y + _s(10)), example.path, font=FONT_SM, fill=DARK)
+        draw.text((x + _s(16), y + EXAMPLE_TITLE_H + _s(14)), 'EXAMPLE', font=FONT_SM,
+                  fill=AMBER)
+        line_y = y + EXAMPLE_TITLE_H + _s(56)
+        for n, line in enumerate(example.lines, start=1):
+            draw.text((x + _s(16), line_y), f'{n:>2}', font=FONT_MD, fill=GREEN_DIM)
+            draw.text((x + _s(96), line_y), line, font=FONT_MD, fill=WHITE)
+            line_y += EXAMPLE_LINE_H
+        draw.text((x + _s(16), line_y + _s(6)), example.note, font=FONT_SM, fill=GREEN)
+        draw.rectangle([x, y, right, y + _example_height(example)], outline=CYAN, width=2)
+        return right
 
     def _centered_text(self, draw: ImageDraw.ImageDraw, text: str, y: int,
                        color: tuple, font: ImageFont.FreeTypeFont,

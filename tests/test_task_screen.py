@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw
 
 import daemon
 from display import display_manager
-from game.puzzle_tasks import TASKS, task_lines
+from game.puzzle_tasks import EXAMPLE_FILES, TASKS, task_lines
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -342,3 +342,51 @@ def test_preview_passes_the_puzzle_number_to_the_display(monkeypatch):
                         headers={"X-Operator-Token": "t"})
         assert r.status_code == 200
     assert [args[-1] for args in seen] == [3, None]                     # ints only
+
+
+def test_the_puzzle_2_example_is_made_up_not_the_real_file():
+    real = set((ROOT / "puzzles" / "level2" / "data.txt").read_text().split())
+    example = EXAMPLE_FILES[2]
+    assert example.path == "/puzzle/data.txt" and len(example.lines) >= 3
+    assert not real & set(example.lines)
+    assert set(EXAMPLE_FILES) == {2}                    # only puzzle 2 has one
+
+
+def test_puzzle_2_task_screen_draws_the_example_left_of_the_text(monkeypatch):
+    dm = display_manager
+    monkeypatch.setattr(dm, "WIDTH", dm.HEIGHT * 16 // 9)
+    d = _display("scanning")
+    img = Image.new("RGB", (dm.WIDTH, dm.HEIGHT), dm.DARK)
+    draw = _RecordingDraw(img)
+    lines = ["PUZZLE 2", "PYTHON", *task_lines(2)]
+    d._draw_task(draw, {"ocr_lines": lines, "puzzle": 2}, 0.0)
+
+    example = EXAMPLE_FILES[2]
+    top = (dm.HEIGHT - dm._example_height(example)) // 2
+    assert img.getpixel((dm.MAZE_LEFT + dm.EXAMPLE_W - 5, top + 5)) == dm.CYAN    # title bar
+    texts = [t[0] for t in draw.texts]
+    assert example.path in texts and all(n in texts for n in example.lines)
+    panel_right = dm.MAZE_LEFT + dm.EXAMPLE_W
+    for text, x, _, font in (t for t in draw.texts if t[0] in lines):
+        assert x > panel_right, text
+        assert x + draw.textbbox((0, 0), text, font=font)[2] < dm.WIDTH, text
+
+
+def test_puzzle_2_ready_screen_puts_the_example_left_and_the_camera_right(monkeypatch):
+    dm = display_manager
+    monkeypatch.setattr(dm, "WIDTH", dm.HEIGHT * 16 // 9)
+    d = _display("scanning")
+    _red_camera(d)
+    img = Image.new("RGB", (dm.WIDTH, dm.HEIGHT), dm.DARK)
+    data = {"ocr_lines": ["READY YOUR CODE", "Hold still..."], "puzzle": 2}
+    d._draw_ready_screen(img, ImageDraw.Draw(img), data, 0.0)
+
+    example = EXAMPLE_FILES[2]
+    middle = dm.HEIGHT - 2 * dm.READY_BAND
+    top = dm.READY_BAND + (middle - dm._example_height(example)) // 2
+    assert img.getpixel((dm.MAZE_LEFT + 5, top + 5)) == dm.CYAN
+    cw, ch = dm.READY_MAZE_CAMERA
+    cam_x = dm.WIDTH - cw - dm._s(30)
+    assert dm.MAZE_LEFT + dm.EXAMPLE_W < cam_x                          # side by side
+    px = img.getpixel((cam_x + cw // 2, dm.READY_BAND + middle // 2))
+    assert px[0] > 150 and px[1] < 60                                   # camera is there

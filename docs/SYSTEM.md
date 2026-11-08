@@ -221,7 +221,9 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
 1. grabs the **Puzzle·Lang card** and shows it → screen shows the puzzle's task
    (`game/puzzle_tasks.py`); once the card is taken away, *"READY YOUR CODE"*.
    Puzzle 3 also draws its maze on the left of both screens (`MAZE_FILES` in
-   `display/display_manager.py`); puzzle 4's maze is never shown. After a puzzle 3
+   `display/display_manager.py`); puzzle 4's maze is never shown. Puzzle 2 shows a
+   made-up example of `/puzzle/data.txt` in the same place (`EXAMPLE_FILES` in
+   `game/puzzle_tasks.py`), so players see the format without the real numbers. After a puzzle 3
    run, the result screen first replays the printed path through the maze
    (`WALK_PUZZLES` and `walk_maze` in `game/output_validator.py`)
 2. shows their **code** (with `# team: NAME`) → screen shows the read-back
