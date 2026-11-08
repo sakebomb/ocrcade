@@ -276,6 +276,7 @@ Lighting and camera angle matter more than anything else.
 | button does nothing | `mode` still `auto`, or wiring | set `button.mode: gpio`; check pin/GND; restart |
 | nothing on the monitor | exec service / framebuffer | `systemctl status ocrcade-exec`; check `/dev/fb0` |
 | exec won't start | port 5000 busy / config | `journalctl -u ocrcade-exec`; ensure old copy stopped |
+| player asks why their code failed | — | the red screen shows it for 15 s: a crash's last traceback lines (or a compile error's `error:` lines), or what the code printed (`game/run_errors.py`) |
 
 **Revert to the previous version:** run `deploy/deploy.sh <previous-commit>`; each
 deploy prints the exact command. On kepler, `git -C ~/ocrcade log --oneline -1` shows

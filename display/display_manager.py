@@ -106,6 +106,8 @@ DARK      = (8,   8,   8  )
 
 SUCCESS_RESET     = 15   # seconds on SUCCESS before returning to attract
 FAIL_RESET        = 5    # seconds on FAILURE/PARSE_ERROR before returning to attract
+FAIL_DETAIL_RESET = 15   # ...when the failure shows the error or output, to read it
+DETAIL_WRAP       = 80   # characters per line in the failure screen's error box
 # "READY YOUR CODE": the live camera fills the screen height (4:3), and the title and
 # hint sit on dark bands over its top and bottom edges.
 READY_CAMERA_W, READY_CAMERA_H = _s(1440), _s(1080)
@@ -151,6 +153,11 @@ def _walk_seconds(walk) -> float:
 def _readback_over(data: dict, now: float) -> bool:
     """The read-back has outlived its countdown by the grace time with no result."""
     return now - data['since'] > data.get('max_stability', 0.0) + READBACK_GRACE_S
+
+
+def _fail_reset(data: dict) -> float:
+    """How long a failure screen stays: longer when there is an error to read."""
+    return FAIL_DETAIL_RESET if data.get('detail') else FAIL_RESET
 
 
 @functools.cache
@@ -308,8 +315,10 @@ class Display:
     def success(self, team: str, puzzle: int, flag: str = '', walk=None):
         self._show_result('success', {'team': team, 'puzzle': puzzle, 'flag': flag}, walk)
 
-    def failure(self, team: str, message: str, ocr: str = '', walk=None):
-        self._show_result('failure', {'team': team, 'message': message, 'ocr': ocr}, walk)
+    def failure(self, team: str, message: str, detail=None, walk=None):
+        """`detail` (a game.run_errors.RunDetail) is the error or output to show."""
+        self._show_result('failure', {'team': team, 'message': message, 'detail': detail},
+                          walk)
 
     def _show_result(self, state: str, data: dict, walk) -> None:
         """Paint a result screen, first replaying the player's maze walk when there is
@@ -460,7 +469,7 @@ class Display:
                     self._set('attract', {})
             elif state == 'failure':
                 self._draw_failure(draw, data, elapsed)
-                if elapsed > FAIL_RESET:
+                if elapsed > _fail_reset(data):
                     self._set('attract', {})
             elif state == 'maze_walk':
                 self._draw_maze_walk(draw, data['walk'], elapsed)
@@ -921,21 +930,37 @@ class Display:
         color    = RED if blink else RED_DIM
 
         self._border(draw, RED)
-        self._centered_text(draw, fail_msg, HEIGHT // 2 - _s(140), color, FONT_LG)
-        self._centered_text(draw, data.get('message', 'TRY AGAIN')[:70],
-                            HEIGHT // 2 - _s(40), AMBER, FONT_MD)
-
-        # Show what the camera actually read so players can self-diagnose
-        ocr = data.get('ocr', '').strip()
-        if ocr:
-            ocr_lines = [ln.strip() for ln in ocr.splitlines() if ln.strip()][:3]
-            draw.text((40, HEIGHT // 2 + _s(40)), "Camera read:", font=FONT_SM, fill=GREEN_DIM)
-            for i, ln in enumerate(ocr_lines):
-                draw.text((40, HEIGHT // 2 + _s(70) + i * _s(30)), ln[:80], font=FONT_SM, fill=GREEN)
+        detail = data.get('detail')
+        if detail is None:
+            self._centered_text(draw, fail_msg, HEIGHT // 2 - _s(140), color, FONT_LG)
+            self._centered_text(draw, data.get('message', 'TRY AGAIN')[:70],
+                                HEIGHT // 2 - _s(40), AMBER, FONT_MD)
+        else:
+            # The error (or what the code printed) is what the player needs to fix it.
+            self._centered_text(draw, fail_msg, _s(50), color, FONT_LG)
+            self._centered_text(draw, data.get('message', 'TRY AGAIN')[:70],
+                                _s(170), AMBER, FONT_MD)
+            self._draw_detail(draw, detail, _s(250))
 
         self._centered_text(draw,
-            f"RESETTING IN {max(0, int(FAIL_RESET - elapsed))}s",
+            f"RESETTING IN {max(0, int(_fail_reset(data) - elapsed))}s",
             HEIGHT - _s(80), AMBER_DIM, FONT_SM)
+
+    def _draw_detail(self, draw: ImageDraw.ImageDraw, detail, top: int) -> None:
+        """A labelled box of error or output lines, long lines wrapped."""
+        left, right = _s(80), WIDTH - _s(80)
+        draw.text((left, top), detail.label, font=FONT_SM,
+                  fill=RED if detail.label == 'ERROR' else CYAN)
+        y = top + _s(44)
+        box_top = y - _s(8)
+        for line in detail.lines:
+            # wrap() keeps a line's leading indent: Python's ^^^ points at the mistake.
+            for chunk in textwrap.wrap(line, DETAIL_WRAP) or ['']:
+                if y > HEIGHT - _s(150):
+                    break
+                draw.text((left + _s(20), y), chunk, font=FONT_SM, fill=WHITE)
+                y += _s(34)
+        draw.rectangle([left, box_top, right, y + _s(4)], outline=GREEN_DIM, width=2)
 
     def _draw_fruitage_active(self, draw: ImageDraw.ImageDraw, elapsed: float):
         """Shown while Fruit Ninja owns the framebuffer (fb writes are paused)."""

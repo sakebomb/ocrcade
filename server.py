@@ -25,6 +25,7 @@ from game.maze_generator import generate_maze
 from game.output_validator import maze_walk_for, set_level4_maze, validate
 from game.rtb_submitter import is_solved
 from game.rtb_submitter import submit as rtb_submit
+from game.run_errors import explain
 from game.sandbox_runner import run as sandbox_run
 from game.sandbox_runner import run_cgroup as sandbox_cgroup
 from vision import load_config
@@ -341,7 +342,8 @@ def _finish_submission(puzzle: int, team: str, lang: str, code: str, outcome: Ou
     if success:
         _score(puzzle, team, message, outcome, walk)
     else:
-        outcome.claim(lambda: display.failure(team, message, walk=walk))
+        headline, detail = explain(result, message)
+        outcome.claim(lambda: display.failure(team, headline, detail=detail, walk=walk))
 
 
 def main() -> None:
