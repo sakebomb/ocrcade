@@ -91,6 +91,24 @@ Puzzles 5 & 6 are **anonymous fun rounds** — they're not attributed to a team.
 - **Button** (optional but recommended) — a momentary push-button for "GO / confirm".
   See §6.
 
+### Power
+- **Shut down with a command, never by pulling the plug:** `sudo poweroff` (or
+  `sudo reboot`), and unplug once the green LED stops flashing. A power pull on
+  2026-11-07 emptied `/boot/firmware/cmdline.txt`, the file that says which disk to boot.
+  A good copy is kept at `/root/cmdline.txt.bak-2026-11-07`.
+- **Use the official 27 W (5 V, 5 A) supply.** With it the firmware allows full USB
+  current by itself; `vcgencmd get_throttled` should read `0x0` (no under-voltage).
+- **A small UPS at the event** keeps a bumped cable from becoming a power pull.
+- **The journal survives reboots**, so after an unexpected restart
+  `journalctl -b -1` shows what the last boot was doing.
+
+### Display link
+The monitor takes USB-C only, so it sits behind a powered HDMI-to-USB-C adapter. Power
+that adapter from a wall charger: underpowered, it drops the link while the Pi keeps
+drawing. `video=HDMI-A-1:1920x1080@60D` in `cmdline.txt` forces HDMI 0 on, so the Pi
+outputs even when the adapter is slow to report a screen; use HDMI 0 (by the USB-C
+power jack). `cat /sys/class/drm/card1-HDMI-A-1/status` shows what the Pi sees.
+
 ### Network
 The code reader is off the Pi, so kepler has to reach it. If it is down, slower than `timeout_s` (30 s), rate-limited, or over budget, the screen says CODE NOT READ and asks for the code again. Camera challenges and puzzle selection keep working either way.
 
@@ -273,7 +291,7 @@ Lighting and camera angle matter more than anything else.
 | puzzle card never selects | marker out of frame / glare | fill frame with the card; matte print; lower `select.marker_stable_frames` |
 | "TEAM NOT RECOGNISED" | team not in roster / no `# team:` line | add to `roster.names`; ensure the code has the comment |
 | button does nothing | `mode` still `auto`, or wiring | set `button.mode: gpio`; check pin/GND; restart |
-| nothing on the monitor | exec service / framebuffer | `systemctl status ocrcade-exec`; check `/dev/fb0` |
+| nothing on the monitor | HDMI-to-USB-C adapter unpowered, or exec service | power the adapter (§4 Display link); `systemctl status ocrcade-exec`; check `/dev/fb0` |
 | exec won't start | port 5000 busy / config | `journalctl -u ocrcade-exec`; ensure old copy stopped |
 | player asks why their code failed | — | the red screen shows it for 15 s: a crash's last traceback lines (or a compile error's `error:` lines), or what the code printed (`game/run_errors.py`) |
 
