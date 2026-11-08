@@ -180,6 +180,27 @@ def test_a_reader_that_fails_asks_for_the_code_again():
         in h.ui.calls
 
 
+def test_holding_the_puzzle_card_during_the_read_back_cancels_it():
+    h = Harness(FakeReader(_readable("# team: Anael\nprint(1)")), confirm=FakeConfirm(None))
+    card = FakeMarker(4, 2, "python")
+    h.select(card)
+    assert h.show_code() is State.READBACK
+    h.markers.current = card
+    assert h.tick() is State.READBACK                   # one glimpse is not enough
+    assert h.tick() is State.SELECTED                   # held: start that card over
+    assert h.submits == [] and h.p._pending is None
+    assert h.ui.calls.count(("puzzle_locked", 2, "python")) == 2
+
+
+def test_a_card_seen_before_the_read_back_does_not_count_toward_a_cancel():
+    h = Harness(FakeReader(_readable("# team: Anael\nprint(1)")), confirm=FakeConfirm(None))
+    card = FakeMarker(4, 2, "python")
+    h.select(card, frames=3)                             # the hold that selected it
+    h.show_code()
+    h.markers.current = card
+    assert h.tick() is State.READBACK
+
+
 def test_no_text_in_view_skips_the_read_quietly():
     reader = FakeReader(_readable("# team: Anael\nx"), text_in_view=False)
     h = Harness(reader)

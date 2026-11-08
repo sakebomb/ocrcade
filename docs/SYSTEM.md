@@ -245,7 +245,9 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
    (`WALK_PUZZLES` and `walk_maze` in `game/output_validator.py`)
 2. shows their **code** (with `# team: NAME`) → screen shows the read-back
 3. checks it during the 15 s countdown (or presses **GO**, once the button is wired) →
-   it runs and scores. A misread runs and fails; the player shows the card again.
+   it runs and scores. To reject a misread, the player holds a puzzle card up during
+   the countdown (`marker_stable_frames` frames): the read is dropped and that card
+   starts over, with no cooldown.
 
 **Watch the daemon log** (`journalctl -u ocrcade-vision -f`) — it narrates every
 SELECT, read, team match, and submit. The journal persists across reboots.

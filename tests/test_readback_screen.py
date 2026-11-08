@@ -61,6 +61,14 @@ def _bar_end(waited: float) -> int:
     return max(filled, default=0)
 
 
+def test_the_read_back_says_how_to_reject_a_misread():
+    img = Image.new("RGB", (dm.WIDTH, dm.HEIGHT), dm.DARK)
+    _display()._draw_readback(ImageDraw.Draw(img), {"ocr_lines": [], "max_stability": 15.0}, 0)
+    band = range(dm.HEIGHT - dm._s(160), dm.HEIGHT - dm._s(115))
+    assert any(img.getpixel((x, y)) == dm.WHITE for y in band for x in range(0, dm.WIDTH, 2))
+    assert "puzzle card" in dm.READBACK_CANCEL_HINT
+
+
 def test_the_countdown_bar_drains_as_time_passes():
     full, half, gone = _bar_end(0.0), _bar_end(7.5), _bar_end(15.0)
     assert full > half > gone
