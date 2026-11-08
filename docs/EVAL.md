@@ -47,6 +47,23 @@ truth is the whole page. Their code also opens files by relative path (`data.txt
 today's sandbox does not provide, so **on this set use `mean_cer` and `exact_rate`, not
 `pass_rate`**. Frames a person could not read with certainty were left out.
 
+### A set from the game's saved reads
+
+The daemon saves every frame it sends to the code reader (`~/ocrcade-captures/`, see
+docs/SYSTEM.md). To turn those into a set:
+
+```bash
+python3 tools/captures_to_set.py ~/ocrcade-eval/event --puzzle 3
+```
+
+A read the player submitted whose code earns the flag in the sandbox is an exact
+transcript of its photo, so it goes straight into `manifest.jsonl` as labelled. Every
+other read goes to `review.jsonl`, with the reader's text (or nothing, if it declined)
+as `truth`. Correct `truth` to what the photo really says, then move the line into
+`manifest.jsonl`. Running it again only adds new reads. The labelled reads come from the
+reader being scored, so a set built only from them flatters that reader: score with the
+reviewed lines too.
+
 ## 2. Score a reader
 
 ```bash
