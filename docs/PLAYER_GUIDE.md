@@ -22,7 +22,8 @@ it, runs it, and scores your team. Here's how to get read right the first time.
 2. **Show that card to the camera.** The screen shows the puzzle it saw and what
    that puzzle asks you to do. Read it, then take the card away; the screen says
    *"READY YOUR CODE"*. The marker is read exactly — no guessing your puzzle or
-   language. For puzzle 3 the maze stays on the left of the screen while you work.
+   language. For puzzle 3 the maze stays on the left of the screen while you work;
+   for puzzle 2 an example of the data file does (the real file has different numbers).
 3. **Show your code** once the screen says ready. Put your code (laptop screen or
    paper) squarely in the camera's view. When it's sharp and still, the read fires.
 4. **Check the read-back.** The screen shows the **code it read** and the **team it

@@ -4,6 +4,8 @@ The vision daemon shows these lines while a puzzle card is in front of the camer
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 TASKS: dict[int, tuple[str, ...]] = {
     0: ("Print anything. Proves the station works.",),
     1: ("Your program can read the file /puzzle/flag1.txt.",
@@ -21,6 +23,23 @@ TASKS: dict[int, tuple[str, ...]] = {
 }
 
 CAMERA_PUZZLES = (5, 6)
+
+
+@dataclass(frozen=True)
+class ExampleFile:
+    """A made-up sample of a puzzle's input file, to show its format on screen.
+
+    Invented on purpose: the real file never appears, so its answer can't be read off.
+    """
+    path: str
+    lines: tuple[str, ...]
+    note: str
+
+
+EXAMPLE_FILES: dict[int, ExampleFile] = {
+    2: ExampleFile("/puzzle/data.txt", ("4821", "1307", "9954", "2716", "6043"),
+                   "...one number per line"),
+}
 
 
 def task_lines(puzzle: int) -> list[str]:
