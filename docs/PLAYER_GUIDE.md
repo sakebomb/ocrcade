@@ -35,6 +35,9 @@ it, runs it, and scores your team. Here's how to get read right the first time.
 5. **Puzzle 3: watch your path.** After your code runs, a dot walks the moves you
    printed through the maze. It reaches E, or stops at the wall where your path
    goes wrong.
+6. **Didn't work? Read the red screen.** If your code crashed, it shows the error:
+   the line number and what went wrong (e.g. `NameError: name 'totl' is not defined`).
+   If it ran but printed the wrong thing, it shows what your code printed.
 
 ## Showing code so it reads first-try (this is 90% of it)
 
