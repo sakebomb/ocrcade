@@ -111,6 +111,7 @@ READY_BAND        = _s(120)
 CORNER_CAMERA     = (_s(320), _s(240))   # task screens
 MAIN_CAMERA       = (_s(480), _s(360))   # main page: clears the puzzle list
 SCANNING_TIMEOUT  = 4.0  # seconds without a preview ping → return to attract
+READBACK_GRACE_S  = 5.0  # read-back left up this long past its countdown with no result
 
 # Mazes drawn on the left of a puzzle's task and "ready your code" screens. Puzzle 3
 # only: puzzle 4's maze changes every reset and is meant to be solved by code.
@@ -140,6 +141,11 @@ def _walk_step_s(walk) -> float:
 
 def _walk_seconds(walk) -> float:
     return _walk_moves(walk) * _walk_step_s(walk)
+
+
+def _readback_over(data: dict, now: float) -> bool:
+    """The read-back has outlived its countdown by the grace time with no result."""
+    return now - data['since'] > data.get('max_stability', 0.0) + READBACK_GRACE_S
 
 
 @functools.cache
@@ -321,7 +327,10 @@ class Display:
                 if self._state != 'scanning':
                     self._state = 'scanning'
                     self._state_entered = time.time()
+                prev = self._state_data
+                same = self._state == 'scanning' and prev.get('source_type') == source_type
                 self._state_data = {
+                    'since':        prev.get('since', time.time()) if same else time.time(),
                     'ocr_lines':    ocr_lines,
                     'stability':    stability,
                     'max_stability': max_stability,
@@ -413,6 +422,12 @@ class Display:
             elif state == 'scanning' and data.get('source_type') == 'ready_code':
                 self._draw_ready_screen(img, draw, data, elapsed)
                 if time.time() - last_preview > SCANNING_TIMEOUT:
+                    self._set('attract', {})
+            elif state == 'scanning' and data.get('source_type') == 'readback':
+                # Sent once, then the countdown runs here. The submission's own screen
+                # replaces it; with no submission it gives up a little after zero.
+                self._draw_readback(draw, data, time.time() - data['since'])
+                if _readback_over(data, time.time()):
                     self._set('attract', {})
             elif state == 'scanning':
                 self._draw_scanning(draw, data, elapsed)
@@ -566,6 +581,29 @@ class Display:
 
         label = f'{stability:.1f}s / {max_stability:.1f}s — hold steady'
         self._centered_text(draw, label, HEIGHT - _s(68), AMBER_DIM, FONT_SM)
+
+    def _draw_readback(self, draw: ImageDraw.ImageDraw, data: dict, waited: float):
+        """The code as read, and a countdown to when it is submitted."""
+        self._border(draw, AMBER)
+        self._centered_text(draw, 'CHECK YOUR CODE', _s(40), AMBER, FONT_MD)
+        lines = [str(ln) for ln in data.get('ocr_lines', [])]
+        y = _s(110)
+        for i, line in enumerate(lines[:14]):
+            draw.text((80, y), line[:72], font=FONT_SM, fill=CYAN if i == 0 else GREEN)
+            y += _s(34)
+            if y > HEIGHT - _s(150):
+                break
+
+        total = data.get('max_stability', 0.0)
+        left = max(0.0, total - waited)
+        bar_x, bar_y, bar_w, bar_h = 60, HEIGHT - _s(110), WIDTH - 120, _s(28)
+        draw.rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], outline=AMBER, width=2)
+        filled = int(bar_w * (left / total)) if total > 0 else 0
+        if filled > 4:
+            draw.rectangle([bar_x + 2, bar_y + 2, bar_x + filled - 2, bar_y + bar_h - 2],
+                           fill=AMBER)
+        label = f'Submitting in {math.ceil(left)}s' if left > 0 else 'Submitting...'
+        self._centered_text(draw, label, HEIGHT - _s(68), AMBER, FONT_SM)
 
     def _draw_task(self, draw: ImageDraw.ImageDraw, data: dict, elapsed: float):
         """The scanned puzzle and its task. The last line says what to do next."""
