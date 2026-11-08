@@ -83,16 +83,32 @@ def test_unsure_detector_never_blocks_a_read():
     assert VLMClient().sees_text(None)                                # no check set
 
 
-def test_config_uses_the_hailo_reader_as_the_text_check():
+def test_config_reads_code_with_claude_only_and_keeps_the_text_check():
+    # Hailo OCR's handwriting reads were garbage, and a slow Claude read fell through to
+    # them and was submitted. A failed Claude read now asks the player to show it again.
     import pytest
 
     pytest.importorskip("cv2")
     from vision import load_config
     from vision.vlm_client import from_config
 
-    client = from_config(load_config()["vlm"])
-    names = [r.name for r in client.code_readers]
-    assert client.text_check is client.code_readers[names.index("hailo-ocr")]
+    cfg = load_config()["vlm"]
+    client = from_config(cfg)
+    assert [r.name for r in client.code_readers] == ["litellm"]
+    assert cfg["litellm"]["timeout_s"] >= 30                   # handwriting takes 6-10 s
+    assert client.text_check is not None and client.text_check.name == "hailo-ocr"
+
+
+def test_a_hailo_code_reader_doubles_as_the_text_check():
+    import pytest
+
+    pytest.importorskip("cv2")
+    from vision import load_config
+    from vision.vlm_client import from_config
+
+    cfg = dict(load_config()["vlm"], code_readers=["litellm", "hailo_ocr"])
+    client = from_config(cfg)
+    assert client.text_check is client.code_readers[1]
 
 
 def test_failure_is_unreadable_and_flagged():

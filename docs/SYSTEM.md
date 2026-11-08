@@ -26,7 +26,7 @@ then PaddleOCR on the Hailo when that reader is down.
   ──────                     ─────────────                         ───────────
   show PUZZLE·LANG  ─▶  camera ─▶ ArUco marker decode ─▶ SELECT(puzzle, lang)
    card (ArUco)
-  show CODE         ─▶  camera ─▶ gate (sharp+steady) ─▶ Claude, else Hailo OCR ────▶ code text
+  show CODE         ─▶  camera ─▶ gate (sharp+steady) ─▶ Claude Sonnet ─────────────▶ code text
                                       │                                          │
                                   team line  ◀───────────────────────────────────┘
                                       │   "# team: NAME"  ─▶ roster fuzzy-match
@@ -43,7 +43,7 @@ The design splits the job so each part does what it's good at:
 |------|-----------|-----|
 | Which puzzle / language? | **ArUco marker** on a printed card | exact, organizer-controlled, robust at any angle/blur |
 | Which team? | **`# team:` line** in the code, fuzzy-matched to the **roster** | a one-character misread still resolves to the right registered team |
-| Read the code | **`vlm.code_readers`**: Claude Sonnet, then Hailo OCR | the off-Pi reader goes first; the Pi still reads code when it is down |
+| Read the code | **`vlm.code_readers`**: Claude Sonnet | Hailo OCR misread handwriting badly, so a failed read asks the player to show it again |
 | Catch a misread | **read-back + button** | the player confirms what was read before it's scored |
 | Don't read a bad frame | **the gate** (blur + stability) | only sharp, steady frames are sent |
 
@@ -92,7 +92,7 @@ Puzzles 5 & 6 are **anonymous fun rounds** — they're not attributed to a team.
   See §6.
 
 ### Network
-When the first code reader is off the Pi, kepler has to reach it. If that reader is down, slow, rate-limited, or over budget, Hailo OCR on the Pi reads the code. Camera challenges and puzzle selection keep working either way.
+The code reader is off the Pi, so kepler has to reach it. If it is down, slower than `timeout_s` (30 s), rate-limited, or over budget, the screen says CODE NOT READ and asks for the code again. Camera challenges and puzzle selection keep working either way.
 
 ---
 
@@ -114,9 +114,8 @@ curl -s http://127.0.0.1:5000/health         # {"status":"ok"}
 ```
 
 Runtime dependencies are already installed on kepler: OpenCV (incl. `cv2.aruco`),
-`picamera2`, `requests`, `PyYAML`, `lgpio`, and the Hailo OCR models. The first
-code reader (Claude Sonnet) runs off the Pi. Hailo OCR on kepler reads the code when
-that reader is down.
+`picamera2`, `requests`, `PyYAML`, `lgpio`, and the Hailo OCR models (for the text
+check). The code reader (Claude Sonnet) runs off the Pi.
 
 ### Deploy (updating the code)
 From a clone of this repo, run `deploy/deploy.sh [REF]` (default `main`). It pushes the
@@ -211,7 +210,7 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
 **Before doors open**
 1. Generate + print the 21 puzzle cards (§8). Lay them out where teams can grab them.
 2. Put the registered teams in `roster.names` (§7).
-3. Confirm the first code reader answers, or that Hailo OCR is loaded on the Pi.
+3. Confirm the code reader answers: no code reads without it.
 4. Wire + enable the button if using one (§6).
 5. `sudo systemctl restart ocrcade-exec ocrcade-vision`; confirm `/health` is ok and
    the daemon log says `degraded=False`.
@@ -269,8 +268,8 @@ Lighting and camera angle matter more than anything else.
 
 | Symptom | Likely cause | Fix |
 |--------|--------------|-----|
-| daemon log: `degraded=True` | the first code reader is unreachable | Hailo OCR still reads; check that reader's URL, key, and network |
-| code reads come back empty | bad lighting, or every reader failed | improve the light and hold steady; confirm the Hailo OCR models are installed |
+| daemon log: `degraded=True` | the code reader is unreachable | no code reads until it is back; check its URL, key, and network |
+| "The reader didn't answer" | the code reader timed out or is unreachable | check kepler's network; the daemon log shows `failed=True` and the time taken |
 | puzzle card never selects | marker out of frame / glare | fill frame with the card; matte print; lower `select.marker_stable_frames` |
 | "TEAM NOT RECOGNISED" | team not in roster / no `# team:` line | add to `roster.names`; ensure the code has the comment |
 | button does nothing | `mode` still `auto`, or wiring | set `button.mode: gpio`; check pin/GND; restart |
@@ -294,12 +293,12 @@ what is live.
   arcade-style button is more fun and more obvious than a tiny tactile one.
 - **Fill the roster.** It's the safety net that makes team names bulletproof; without
   it a misread name is accepted as-is.
-- **The on-Pi reader is what keeps an event going.** Confirm the Hailo OCR models are installed before doors open, so a remote-reader outage still reads code.
+- **The network is what keeps an event going.** Code reads need the remote reader, so check kepler's connection before doors open. The Hailo OCR models still need to be installed: they run the text check.
 - **Mazes and stacked parens are the misread-prone cases** — the read-back exists
   exactly for these; tell players to glance at long strings before pressing GO.
 - **Keep the old version around** until a new one is proven on-device. Every deploy
   is reversible by design.
-- **A down remote reader is not a down cabinet.** `degraded=True` means Hailo OCR is reading instead. The camera games keep working either way.
+- **A down remote reader stops code reads, not the cabinet.** With `degraded=True` the camera games keep working; code puzzles wait for the reader.
 
 ### Possible future improvements
 - Per-team ArUco cards if you ever want scored team-vs-team camera rounds.

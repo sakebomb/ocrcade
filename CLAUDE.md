@@ -7,9 +7,11 @@ shows the result on a monitor. Every puzzle is a path to its flag. The operator 
 
 ## Current direction
 
-- **Code readers are Claude Sonnet, then Hailo OCR.** `vlm.code_readers` tries LiteLLM
-  (`claude-sonnet-5-5`) first and `hailo_ocr` (PaddleOCR on the Hailo-10H) when that
-  reader is down, slow, rate-limited, or over budget. Claude declines an emphatic
+- **The code reader is Claude Sonnet alone.** `vlm.code_readers` is LiteLLM
+  (`claude-sonnet-5-5`), with a 30 s timeout: handwriting reads take 6-10 s. When it
+  fails, the player is asked to show the code again. `hailo_ocr` (PaddleOCR on the
+  Hailo-10H) is no longer a code reader, since its handwriting reads were garbage, but its
+  detector still runs the text check that skips empty frames. Claude declines an emphatic
   "transcribe EXACTLY" prompt (`content_filter`, no text); test any prompt change against
   it on kepler. The Hailo Qwen2-VL-2B is not a code reader:
   at its fixed 336x336 input it only reads the puzzle number. Ollama is an optional reader.

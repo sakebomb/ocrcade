@@ -1,10 +1,11 @@
 # OCRcade v2 configuration. Single source of truth for endpoints + thresholds.
 vlm:
   # Code readers, tried in order: one that is unreachable or breaks falls through to
-  # the next; one that looks and declines (bad frame) is final. Names: ollama, hailo_ocr.
-  # litellm (Claude Sonnet, ~2.5 s, photos leave the Pi) first; hailo_ocr (on the Pi, ~0.5 s)
-  # answers when LiteLLM is down, slow (> timeout_s), rate-limited or over budget.
-  code_readers: [litellm, hailo_ocr]
+  # the next; one that looks and declines (bad frame) is final. Names: litellm, ollama,
+  # hailo_ocr. Claude alone (photos leave the Pi): hailo_ocr's handwriting reads were
+  # garbage and got submitted, so a failed Claude read now asks the player to show it
+  # again. Hailo OCR still runs the "is there text?" check that skips empty frames.
+  code_readers: [litellm]
   primary: ollama          # whole-card read_card only (tools/phase1_smoke.py)
   fallback: hailo          # coarse: puzzle-number + camera-challenge routing only (NOT a code reader)
   on_unreachable: degrade  # degrade = run camera challenges + routing
@@ -24,7 +25,7 @@ vlm:
     model: "claude-sonnet-5-5"  # Claude Sonnet 5.5 via LiteLLM; grok-fast was blocked (HTTP 402)
     url_env: LITELLM_URL
     key_env: LITELLM_API_KEY
-    timeout_s: 10               # past this, fall through to hailo_ocr (~0.5 s)
+    timeout_s: 30               # handwriting reads take 6-10 s; 10 s cut off good reads
 
   hailo_ocr:   # PaddleOCR on the Hailo: reads code (eval reader `hailo-ocr`; tools/fetch_hailo_ocr.sh)
     det_hef: "/home/sakebomb/hailo-models/paddle_ocr_v5_mobile_detection.hef"
