@@ -26,6 +26,7 @@ import requests
 from game.puzzle_tasks import CAMERA_PUZZLES, task_lines
 from vision import load_config
 from vision.capture import Camera
+from vision.captures import CaptureLog
 from vision.gating import FrameGate
 from vision.markers import MarkerDetector
 from vision.pipeline import AutoConfirm, Pipeline
@@ -71,6 +72,16 @@ def _load_roster(cfg: dict) -> list[str]:
     roster = [n.strip() for n in names if n and n.strip()]
     log.info(f"roster: {len(roster)} registered teams")
     return roster
+
+
+def _capture_log(cfg: dict) -> CaptureLog | None:
+    """Where each read's frame is saved, or None when `captures.enabled` is false."""
+    if not cfg.get("enabled", False):
+        return None
+    captures = CaptureLog(cfg.get("dir", "~/ocrcade-captures"),
+                          min_free_mb=int(cfg.get("min_free_mb", 1024)))
+    log.info(f"saving every read's frame to {captures.root}")
+    return captures
 
 
 class ServerUI:
@@ -149,7 +160,8 @@ class Daemon:
             clear_frames=int(cfg.get("select", {}).get("clear_frames", 1)),
             confirm_s=float(cfg.get("select", {}).get("confirm_s", 2.0)),
             readback_timeout_s=float(rb.get("timeout_s", 30.0)),
-            cooldown_s=float(g.get("cooldown_s", 20.0)))
+            cooldown_s=float(g.get("cooldown_s", 20.0)),
+            captures=_capture_log(cfg.get("captures", {})))
 
     @staticmethod
     def _make_confirm(btn: dict, rb: dict):

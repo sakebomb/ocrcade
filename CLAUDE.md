@@ -54,7 +54,8 @@ deploy/deploy.sh [REF]                          # push REF to kepler, restart, h
 | Camera | IMX500 (2028x1520 used) |
 | Services | `ocrcade-exec`, `ocrcade-vision` (system python, not a venv) |
 | Run dir | `~/ocrcade`: a git checkout on branch `deploy` |
-| Logs | `journalctl -u ocrcade-vision` / `-u ocrcade-exec`. The current code saves no camera frames; `~/ocrcade-logs/` holds 482 screen-card frames from the earlier version |
+| Logs | `journalctl -u ocrcade-vision` / `-u ocrcade-exec`; the journal persists across reboots (`deploy/journald-ocrcade.conf`) |
+| Captures | Every frame sent to a code reader, with its read: `~/ocrcade-captures/<date>/` (`reads.jsonl`). Photos of handwriting: never copy them into git. `~/ocrcade-logs/` holds 482 screen-card frames from the earlier version |
 
 ## Invariants
 

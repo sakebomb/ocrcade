@@ -228,7 +228,14 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
 3. checks it and presses **GO** → it runs and scores; or re-shows to re-read.
 
 **Watch the daemon log** (`journalctl -u ocrcade-vision -f`) — it narrates every
-SELECT, read, team match, and submit.
+SELECT, read, team match, and submit. The journal persists across reboots.
+
+**Every read is saved.** Each frame sent to a code reader lands in
+`~/ocrcade-captures/<date>/<time>-p<puzzle>-<n>.jpg`. The same day's `reads.jsonl` has one
+line per read: reader, latency, readable or the reason it gave up, team, and the code it
+read. A read the player submits gets a second line, `"event": "submitted"`. Saving stops
+when free disk drops below `captures.min_free_mb`; turn it off with `captures.enabled`.
+These are photos of handwriting, so they stay on kepler.
 
 ---
 
