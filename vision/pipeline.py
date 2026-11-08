@@ -31,6 +31,7 @@ HINT_STILL = "Hold still..."
 HINT_BLURRY = "Too blurry. Hold the paper still."
 HINT_CLOSER = "Can't see your code. Hold it closer so it fills the camera."
 HINT_READING = "Reading your code..."
+HINT_RETRY = "The reader didn't answer. Show your code again."
 
 
 class State(StrEnum):
@@ -222,7 +223,9 @@ class Pipeline:
         image = self._capture(main, r, team)
         if not r.readable:
             log.info(f"code not read: {r.reason}")
-            self.ui.feedback("CODE NOT READ", "Hold the paper so it fills the camera")
+            # failed: the reader timed out or is unreachable, not a bad photo.
+            self.ui.feedback("CODE NOT READ", HINT_RETRY if r.failed else
+                             "Hold the paper so it fills the camera")
             self.gate.reset()                     # stay SELECTED — let them retry
             return
         if team is None:

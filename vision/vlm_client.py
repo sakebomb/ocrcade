@@ -135,10 +135,12 @@ def from_config(cfg: dict) -> VLMClient:
     if unknown:
         raise ValueError(f"vlm.code_readers: unknown {unknown}; choose from {list(CODE_READERS)}")
     code_readers = [CODE_READERS[n](cfg) for n in names]
-    # The text check reuses the Hailo OCR reader already in the chain: one device.
+    # The text check uses Hailo OCR's detector only, so it works when Hailo is not a
+    # code reader. Reuse the chain's instance when there is one: one device.
     text_check = None
-    if cfg.get("text_check", True) and "hailo_ocr" in names:
-        text_check = code_readers[names.index("hailo_ocr")]
+    if cfg.get("text_check", True) and "hailo_ocr" in cfg:
+        text_check = (code_readers[names.index("hailo_ocr")] if "hailo_ocr" in names
+                      else _hailo_ocr(cfg))
     primary = _ollama(cfg)
     fallback = None
     if cfg.get("fallback") == "hailo":

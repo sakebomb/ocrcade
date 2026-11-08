@@ -172,6 +172,14 @@ def test_unreadable_stays_selected_and_feeds_back():
         in h.ui.calls
 
 
+def test_a_reader_that_fails_asks_for_the_code_again():
+    h = Harness(FakeReader(CardReading.failure("litellm timed out", "litellm")))
+    h.select(FakeMarker(4, 2, "python"))
+    assert h.show_code() is State.SELECTED and h.submits == []
+    assert ("feedback", "CODE NOT READ", "The reader didn't answer. Show your code again.") \
+        in h.ui.calls
+
+
 def test_no_text_in_view_skips_the_read_quietly():
     reader = FakeReader(_readable("# team: Anael\nx"), text_in_view=False)
     h = Harness(reader)
