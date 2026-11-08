@@ -130,8 +130,8 @@ previous commit; deploying that commit rolls back. Setup: [`deploy/README.md`](.
 ## 6. The button — wiring & configuration
 
 The button is how a player confirms "this read is correct, submit it." Until one is
-wired, the system uses **AutoConfirm** (auto-submits after showing the read-back for
-a few seconds), so it works without hardware.
+wired, the system uses **AutoConfirm**: the read-back screen shows the code with a
+countdown and submits after `readback.hold_s` (15 s), so it works without hardware.
 
 ### Wiring (active-low, internal pull-up)
 A momentary push-button between a GPIO pin and ground. No resistor needed — the Pi's
@@ -225,7 +225,8 @@ Players show their **code** on a laptop screen or on paper — see the Player Gu
    run, the result screen first replays the printed path through the maze
    (`WALK_PUZZLES` and `walk_maze` in `game/output_validator.py`)
 2. shows their **code** (with `# team: NAME`) → screen shows the read-back
-3. checks it and presses **GO** → it runs and scores; or re-shows to re-read.
+3. checks it during the 15 s countdown (or presses **GO**, once the button is wired) →
+   it runs and scores. A misread runs and fails; the player shows the card again.
 
 **Watch the daemon log** (`journalctl -u ocrcade-vision -f`) — it narrates every
 SELECT, read, team match, and submit. The journal persists across reboots.
@@ -256,8 +257,9 @@ Lighting and camera angle matter more than anything else.
   `settle_s` seconds have passed, so the puzzle card itself is not read as code.
 - **Camera**: square-on, filling the frame, no glare. `camera.rotate` (0/90/180/270)
   if the camera is mounted sideways.
-- **Read-back hold** (`readback.hold_s`, auto mode): how long the read shows before
-  auto-submit. Irrelevant once the button is enabled.
+- **Read-back hold** (`readback.hold_s`, auto mode, 15 s): how long the read shows,
+  counting down on screen, before auto-submit. Long enough to check puzzle 3's
+  40-letter path. Irrelevant once the button is enabled.
 
 ---
 
@@ -297,7 +299,6 @@ what is live.
 - **A down remote reader is not a down cabinet.** `degraded=True` means Hailo OCR is reading instead. The camera games keep working either way.
 
 ### Possible future improvements
-- A dedicated read-back screen (currently shown via the preview view).
 - Per-team ArUco cards if you ever want scored team-vs-team camera rounds.
 - A reader that stays up without a remote API.
 - Auto-detected camera rotation, so the mount orientation doesn't need config.

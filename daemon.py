@@ -86,7 +86,8 @@ def _capture_log(cfg: dict) -> CaptureLog | None:
 
 class ServerUI:
     """Posts pipeline UI events to the exec/display server. Throttles thumbnails."""
-    def __init__(self, exec_url: str):
+    def __init__(self, exec_url: str, readback_s: float = 4.0):
+        self.readback_s = readback_s   # how long the read-back shows before it submits
         self.preview_url = f"{exec_url}/preview"
         self.feedback_url = f"{exec_url}/feedback"
         self.feed_url = f"{exec_url}/camera_feed"
@@ -118,8 +119,10 @@ class ServerUI:
     def readback(self, puzzle: int, lang: str, team: str | None, code: str) -> None:
         lines = [f"Puzzle {puzzle} · {lang} · team {team}", "READ:"]
         lines += (code or "").splitlines()[:12]
-        _post(self.preview_url, {"ocr_lines": lines, "stability": 1.0,
-                                 "max_stability": 1.0, "source_type": "readback"}, timeout=2)
+        # max_stability carries the countdown: the display counts it down itself.
+        _post(self.preview_url, {"ocr_lines": lines, "stability": 0.0,
+                                 "max_stability": self.readback_s, "source_type": "readback"},
+              timeout=2)
 
     def feedback(self, title: str, detail: str) -> None:
         _post(self.feedback_url, {"error": detail, "ocr_lines": [title, detail]})
@@ -145,8 +148,8 @@ class Daemon:
             mapping={int(k): tuple(v) for k, v in cfg.get("markers", {}).get("map", {}).items()}
             or None,
             dict_name=cfg.get("markers", {}).get("dict", "DICT_4X4_50"))
-        ui = ServerUI(exec_url)
         rb = cfg.get("readback", {})
+        ui = ServerUI(exec_url, readback_s=float(rb.get("hold_s", 4.0)))
         confirm = self._make_confirm(cfg.get("button", {}), rb)
 
         self.cam = self._new_camera()

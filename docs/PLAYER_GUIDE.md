@@ -25,11 +25,12 @@ it, runs it, and scores your team. Here's how to get read right the first time.
    language. For puzzle 3 the maze stays on the left of the screen while you work.
 3. **Show your code** once the screen says ready. Put your code (laptop screen or
    paper) squarely in the camera's view. When it's sharp and still, the read fires.
-4. **Check the read-back.** The screen shows the **code it read** and the **team it
-   matched**. Look it over:
-   - **Right?** Press the **GO button** to submit.
-   - **Wrong?** (a typo, an extra `)`, a scrambled maze string, wrong team)
-     Don't press GO — just **show your code again** to re-read. Re-reading is free.
+4. **Check the read-back.** The screen says *"CHECK YOUR CODE"* and shows the **code
+   it read** and the **team it matched**, with a 15-second countdown. When it reaches
+   zero your code is submitted. Look it over:
+   - **Right?** Just wait for the countdown.
+   - **Wrong?** (a typo, an extra `)`, a scrambled maze string, wrong team) Let it
+     run, then show your puzzle card again and re-show your code. Trying again is free.
 5. **Puzzle 3: watch your path.** After your code runs, a dot walks the moves you
    printed through the maze. It reaches E, or stops at the wall where your path
    goes wrong.
@@ -67,5 +68,5 @@ The camera is excellent at code but, like any reader, can slip on:
 |---|---|---|
 | nothing happens on the puzzle card | marker not seen | fill the frame with the card, face it straight, more light |
 | "show your code" but it won't read | code blurry / angled / dim | steady the screen, straighten it, raise brightness |
-| read-back shows a typo | rare character misread | **don't press GO** — re-show your code |
+| read-back shows a typo | rare character misread | let it submit, then show your card and code again |
 | wrong / no team matched | team not registered, or name not in code | add `# team: NAME`, and check you're registered |

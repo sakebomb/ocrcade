@@ -72,7 +72,7 @@ captures:               # every frame sent to a code reader, plus what it read (
   min_free_mb: 1024     # stop saving when the disk has less free than this
 
 readback:
-  hold_s: 4.0           # Phase B: auto-submit after showing the read-back this long
+  hold_s: 15.0          # auto-submit after showing the read-back this long (on-screen countdown)
   timeout_s: 30         # max wait for a confirm before returning to idle
 
 button:                 # Phase C — physical confirm button (lgpio on Pi 5)
